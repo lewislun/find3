@@ -40,10 +40,11 @@ func SaveSensorData(p models.SensorData) (err error) {
 	if err != nil {
 		return
 	}
-
+	/* disable auto calibration
 	if p.Location != "" {
 		go updateCounter(p.Family)
 	}
+	*/
 	return
 }
 
