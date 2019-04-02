@@ -74,7 +74,8 @@ func main() {
 	api.AIPort = *aiPort
 	api.MainPort = *port
 	server.Port = *port
-	server.UseMQTT = mqtt.Server != ""
+	//server.UseMQTT = mqtt.Server != ""
+	server.UseMQTT = false
 
 	if *memprofile {
 		memprofilePath := path.Join(dataFolder, "memprofile")
