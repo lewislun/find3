@@ -14,6 +14,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	//_ "github.com/go-sql-driver/mysql"
 	"github.com/mr-tron/base58/base58"
 	"github.com/pkg/errors"
 	"github.com/schollz/find3/server/main/src/models"
@@ -1094,13 +1095,13 @@ func (d *Database) getRows(rows *sql.Rows) (s []models.SensorData, err error) {
 			err = errors.Wrap(err, "getRows")
 			return
 		}
-		deviceID := string((*arr[1].(*interface{})).([]uint8))
+		deviceID := string((*arr[1].(*interface{})).(string))
 		s0 := models.SensorData{
 			// the underlying value of the interface pointer and cast it to a pointer interface to cast to a byte to cast to a string
 			Timestamp: int64((*arr[0].(*interface{})).(int64)),
 			Family:    d.family,
 			Device:    deviceID,
-			Location:  locationIDToName[string((*arr[2].(*interface{})).([]uint8))],
+			Location:  locationIDToName[string((*arr[2].(*interface{})).(string))],
 			Sensors:   make(map[string]map[string]interface{}),
 		}
 		// add in the sensor data
@@ -1111,7 +1112,7 @@ func (d *Database) getRows(rows *sql.Rows) (s []models.SensorData, err error) {
 			if *arr[i].(*interface{}) == nil {
 				continue
 			}
-			shortenedJSON := string((*arr[i].(*interface{})).([]uint8))
+			shortenedJSON := string((*arr[i].(*interface{})).(string))
 			s0.Sensors[colName], err = sensorDataSS.ExpandMapFromString(shortenedJSON)
 			if err != nil {
 				return
