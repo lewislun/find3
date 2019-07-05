@@ -133,8 +133,7 @@ func (d *Database) Get(key string, v interface{}) (err error) {
 	}
 	defer stmt.Close()
 	var result string
-	err = stmt.QueryRow(key).Scan(&result)
-	if err != nil {
+	if err = stmt.QueryRow(key).Scan(&result); err != nil {
 		return errors.Wrap(err, "problem getting key")
 	}
 
@@ -143,6 +142,40 @@ func (d *Database) Get(key string, v interface{}) (err error) {
 		return
 	}
 	// logger.Log.Debugf("got %s from '%s'", string(result), key)
+	return
+}
+
+// GetMany will retrieve values associated with a set of keys.
+func (d *Database) GetMany(keyValues map[string]interface{}) (err error) {
+	// SQL
+	keys := make([]string, 0)
+	for key := range keyValues {
+		keys = append(keys, key)
+	}
+	sql := "select id,value from keystore where id IN ('" + strings.Join(keys, "','") + "')"
+	stmt, err := d.db.Prepare(sql)
+	if err != nil {
+		return errors.Wrap(err, "problem preparing SQL")
+	}
+	defer stmt.Close()
+	rows, err := stmt.Query()
+	if err != nil {
+		return errors.Wrap(err, "problem executing SQL")
+	}
+	defer rows.Close()
+
+	// Put SQL results into keyValues
+	for rows.Next() {
+		var id string
+		var value string
+		if err = rows.Scan(&id, &value); err != nil {
+			return errors.Wrap(err, "problem scanning SQL rows")
+		}
+		if err = json.Unmarshal([]byte(value), keyValues[id]); err != nil {
+			return errors.Wrap(err, "problem unmarshalling results")
+		}
+	}
+
 	return
 }
 
@@ -295,8 +328,7 @@ func (d *Database) AddSensor(s models.SensorData) (err error) {
 
 	// update the map key slimmer
 	if previousCurrent != sensorDataSS.Current {
-		err = d.Set("sensorDataStringSizer", sensorDataSS.Save())
-		if err != nil {
+		if err = d.Set("sensorDataStringSizer", sensorDataSS.Save()); err != nil {
 			return
 		}
 	}

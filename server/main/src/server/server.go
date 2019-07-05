@@ -409,26 +409,20 @@ func Run() (err error) {
 			if err != nil {
 				logger.Log.Warn("could not get TotalLearnedCount")
 			}
+
 			var percentFloat64 float64
-			err = d.Get("PercentCorrect", &percentFloat64)
-			if err != nil {
-				logger.Log.Warn("No learning data available")
+			var confusionMetrics map[string]map[string]models.BinaryStats
+			var accuracyBreakdown map[string]float64
+
+			keyValues := make(map[string]interface{})
+			keyValues["PercentCorrect"] = &percentFloat64
+			keyValues["LastCalibrationTime"] = &efficacy.LastCalibrationTime
+			keyValues["AccuracyBreakdown"] = &accuracyBreakdown
+			keyValues["AlgorithmEfficacy"] = &confusionMetrics
+			if err := d.GetMany(keyValues); err != nil {
+				err = errors.Wrap(err, "could not get info")
 			}
 			efficacy.PercentCorrect = int64(100 * percentFloat64)
-			err = d.Get("LastCalibrationTime", &efficacy.LastCalibrationTime)
-			if err != nil {
-				logger.Log.Warn("could not get LastCalibrationTime")
-			}
-			var accuracyBreakdown map[string]float64
-			err = d.Get("AccuracyBreakdown", &accuracyBreakdown)
-			if err != nil {
-				logger.Log.Warn("could not get AccuracyBreakdown")
-			}
-			var confusionMetrics map[string]map[string]models.BinaryStats
-			err = d.Get("AlgorithmEfficacy", &confusionMetrics)
-			if err != nil {
-				logger.Log.Warn("could not get AlgorithmEfficacy")
-			}
 
 			logger.Log.Debugf("[%s] getting location count", family)
 			locationCounts, err := d.GetLocationCounts()
@@ -686,19 +680,14 @@ func handlerEfficacy(c *gin.Context) {
 		}
 		defer d.Close()
 
-		// TODO: get many
-		if err = d.Get("LastCalibrationTime", &efficacy.LastCalibrationTime); err != nil {
-			err = errors.Wrap(err, "could not get LastCalibrationTime")
-			return
+		keyValues := make(map[string]interface{})
+		keyValues["LastCalibrationTime"] = &efficacy.LastCalibrationTime
+		keyValues["AccuracyBreakdown"] = &efficacy.AccuracyBreakdown
+		keyValues["AlgorithmEfficacy"] = &efficacy.ConfusionMetrics
+		if err := d.GetMany(keyValues); err != nil {
+			err = errors.Wrap(err, "could not get efficacy info")
 		}
-		if err = d.Get("AccuracyBreakdown", &efficacy.AccuracyBreakdown); err != nil {
-			err = errors.Wrap(err, "could not get AccuracyBreakdown")
-			return
-		}
-		if err = d.Get("AlgorithmEfficacy", &efficacy.ConfusionMetrics); err != nil {
-			err = errors.Wrap(err, "could not get AlgorithmEfficacy")
-			return
-		}
+
 		return
 	}(c)
 	if err != nil {
@@ -900,7 +889,6 @@ func handlerData(c *gin.Context) {
 		}
 
 		// process data
-		s.Family = strings.TrimSpace(strings.ToLower(s.Family))
 		if err = processSensorData(s, justSave); err != nil {
 			message = s.Family
 			return
@@ -1281,10 +1269,10 @@ func processSensorData(p models.SensorData, justSave ...bool) (err error) {
 		return
 	}
 
-	if len(justSave) > 0 && justSave[0] {
-		return
+	if len(justSave) < 0 || !justSave[0] {
+		go sendOutData(p)
 	}
-	go sendOutData(p)
+
 	return
 }
 
