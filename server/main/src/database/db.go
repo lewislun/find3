@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
-	//_ "github.com/go-sql-driver/mysql"
+	//_ "github.com/mattn/go-sqlite3"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/mr-tron/base58/base58"
 	"github.com/pkg/errors"
 	"github.com/schollz/find3/server/main/src/models"
@@ -127,7 +127,7 @@ func (d *Database) Columns() (columns []string, err error) {
 
 // Get will retrieve the value associated with a key.
 func (d *Database) Get(key string, v interface{}) (err error) {
-	stmt, err := d.db.Prepare("select value from keystore where key = ?")
+	stmt, err := d.db.Prepare("select value from keystore where id = ?")
 	if err != nil {
 		return errors.Wrap(err, "problem preparing SQL")
 	}
@@ -922,58 +922,44 @@ func (d *Database) Delete() (err error) {
 func Open(family string, readOnly ...bool) (d *Database, err error) {
 	d = new(Database)
 	d.family = strings.TrimSpace(family)
-
-	// convert the name to base64 for file writing
-	// override the name
-	if len(readOnly) > 1 && readOnly[1] {
-		d.name = path.Join(DataFolder, d.family)
-	} else {
-		d.name = path.Join(DataFolder, base58.FastBase58Encoding([]byte(d.family))+".sqlite3.db")
-	}
-
-	// if read-only, make sure the database exists
-	if _, err = os.Stat(d.name); err != nil && len(readOnly) > 0 && readOnly[0] {
-		err = errors.New(fmt.Sprintf("group '%s' does not exist", d.family))
-		return
-	}
+	d.name = "find3_" + d.family
 
 	// obtain a lock on the database
 	// logger.Log.Debugf("getting filelock on %s", d.name+".lock")
-	for {
-		var ok bool
-		databaseLock.Lock()
-		if _, ok = databaseLock.Locked[d.name]; !ok {
-			databaseLock.Locked[d.name] = true
+	/*
+		for {
+			var ok bool
+			// use Rlock instead of lock if readonly
+			databaseLock.Lock()
+			if _, ok = databaseLock.Locked[d.name]; !ok {
+				databaseLock.Locked[d.name] = true
+			}
+			databaseLock.Unlock()
+			if !ok {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		databaseLock.Unlock()
-		if !ok {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	*/
 	// logger.Log.Debugf("got filelock")
 
-	// check if it is a new database
-	newDatabase := false
-	if _, err := os.Stat(d.name); os.IsNotExist(err) {
-		newDatabase = true
-	}
+	// TODO: check if it is a new database
 
-	// open sqlite3 database
-	d.db, err = sql.Open("sqlite3", d.name)
-	if err != nil {
-		return
+	// open database
+	if d.db, err = sql.Open("mysql", "root:root@/"+d.name); err == nil {
+		logger.Log.Debug("opened mysql database")
 	}
-	// logger.Log.Debug("opened sqlite3 database")
 
 	// create new database tables if needed
-	if newDatabase {
-		err = d.MakeTables()
-		if err != nil {
-			return
+	/*
+		if newDatabase {
+			err = d.MakeTables()
+			if err != nil {
+				return
+			}
+			logger.Log.Debug("made tables")
 		}
-		logger.Log.Debug("made tables")
-	}
+	*/
 
 	return
 }

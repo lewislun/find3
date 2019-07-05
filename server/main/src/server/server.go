@@ -676,6 +676,7 @@ func handlerEfficacy(c *gin.Context) {
 		ConfusionMetrics    map[string]map[string]models.BinaryStats `json:"confusion_metrics"`
 		LastCalibrationTime time.Time                                `json:"last_calibration_time"`
 	}
+
 	efficacy, err := func(c *gin.Context) (efficacy Efficacy, err error) {
 		family := strings.ToLower(strings.TrimSpace(c.Param("family")))
 
@@ -685,18 +686,15 @@ func handlerEfficacy(c *gin.Context) {
 		}
 		defer d.Close()
 
-		err = d.Get("LastCalibrationTime", &efficacy.LastCalibrationTime)
-		if err != nil {
+		if err = d.Get("LastCalibrationTime", &efficacy.LastCalibrationTime); err != nil {
 			err = errors.Wrap(err, "could not get LastCalibrationTime")
 			return
 		}
-		err = d.Get("AccuracyBreakdown", &efficacy.AccuracyBreakdown)
-		if err != nil {
+		if err = d.Get("AccuracyBreakdown", &efficacy.AccuracyBreakdown); err != nil {
 			err = errors.Wrap(err, "could not get AccuracyBreakdown")
 			return
 		}
-		err = d.Get("AlgorithmEfficacy", &efficacy.ConfusionMetrics)
-		if err != nil {
+		if err = d.Get("AlgorithmEfficacy", &efficacy.ConfusionMetrics); err != nil {
 			err = errors.Wrap(err, "could not get AlgorithmEfficacy")
 			return
 		}
@@ -705,7 +703,6 @@ func handlerEfficacy(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": err == nil})
 	} else {
-
 		c.JSON(http.StatusOK, gin.H{"message": "got stats", "success": err == nil, "efficacy": efficacy})
 	}
 }
