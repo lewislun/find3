@@ -686,6 +686,7 @@ func handlerEfficacy(c *gin.Context) {
 		}
 		defer d.Close()
 
+		// TODO: get many
 		if err = d.Get("LastCalibrationTime", &efficacy.LastCalibrationTime); err != nil {
 			err = errors.Wrap(err, "could not get LastCalibrationTime")
 			return
@@ -891,31 +892,23 @@ func handlerNow(c *gin.Context) {
 func handlerData(c *gin.Context) {
 	message, err := func(c *gin.Context) (message string, err error) {
 		justSave := c.DefaultQuery("justsave", "0") == "1"
-		var d models.SensorData
-		err = c.BindJSON(&d)
-		if err != nil {
-			message = d.Family
+		var s models.SensorData
+		if err = c.BindJSON(&s); err != nil {
+			message = s.Family
 			err = errors.Wrap(err, "problem binding data")
 			return
 		}
 
-		err = d.Validate()
-		if err != nil {
-			message = d.Family
-			err = errors.Wrap(err, "problem validating data")
-			return
-		}
-
 		// process data
-		d.Family = strings.TrimSpace(strings.ToLower(d.Family))
-		err = processSensorData(d, justSave)
-		if err != nil {
-			message = d.Family
+		s.Family = strings.TrimSpace(strings.ToLower(s.Family))
+		if err = processSensorData(s, justSave); err != nil {
+			message = s.Family
 			return
 		}
-		message = "inserted data"
 
-		logger.Log.Debugf("[%s] /data %+v", d.Family, d)
+		// success
+		message = "inserted data"
+		logger.Log.Debugf("[%s] /data %+v", s.Family, s)
 		return
 	}(c)
 
@@ -1284,8 +1277,7 @@ func handlerFIND(c *gin.Context) {
 }
 
 func processSensorData(p models.SensorData, justSave ...bool) (err error) {
-	err = api.SaveSensorData(p)
-	if err != nil {
+	if err = api.SaveSensorData(p); err != nil {
 		return
 	}
 

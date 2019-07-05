@@ -150,26 +150,18 @@ func (d *Database) Get(key string, v interface{}) (err error) {
 func (d *Database) Set(key string, value interface{}) (err error) {
 	var b []byte
 	b, err = json.Marshal(value)
-	if err != nil {
-		return err
+	if b, err = json.Marshal(value); err != nil {
+		return
 	}
-	tx, err := d.db.Begin()
-	if err != nil {
-		return errors.Wrap(err, "Set")
-	}
-	stmt, err := tx.Prepare("insert or replace into keystore(key,value) values (?, ?)")
+	valueStr := string(b)
+	sql := "insert into keystore(id,value) values(?,?) on duplicate key update value=?"
+	stmt, err := d.db.Prepare(sql)
 	if err != nil {
 		return errors.Wrap(err, "Set")
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(key, string(b))
-	if err != nil {
-		return errors.Wrap(err, "Set")
-	}
-
-	err = tx.Commit()
-	if err != nil {
+	if _, err = stmt.Exec(key, valueStr, valueStr); err != nil {
 		return errors.Wrap(err, "Set")
 	}
 
@@ -284,85 +276,21 @@ func (d *Database) AddSensor(s models.SensorData) (err error) {
 	}
 	previousCurrent := sensorDataSS.Current
 
-	// setup the database
-	tx, err := d.db.Begin()
-	if err != nil {
-		return errors.Wrap(err, "AddSensor")
-	}
-
-	// first add new columns in the sensor data
-	deviceID, err := d.AddName("devices", s.Device)
-	if err != nil {
-		return errors.Wrap(err, "problem getting device ID")
-	}
-	locationID := ""
-	if len(s.Location) > 0 {
-		locationID, err = d.AddName("locations", s.Location)
-		if err != nil {
-			return errors.Wrap(err, "problem getting location ID")
-		}
-	}
-	args := make([]interface{}, 3)
+	args := make([]interface{}, 4)
 	args[0] = s.Timestamp
-	args[1] = deviceID
-	args[2] = locationID
-	argsQ := []string{"?", "?", "?"}
-	for sensor := range s.Sensors {
-		if _, ok := oldColumns[sensor]; !ok {
-			stmt, err := tx.Prepare("alter table sensors add column " + sensor + " text")
-			if err != nil {
-				return errors.Wrap(err, "AddSensor, adding column")
-			}
-			_, err = stmt.Exec()
-			if err != nil {
-				return errors.Wrap(err, "AddSensor, adding column")
-			}
-			logger.Log.Debugf("adding column %s", sensor)
-			columnList = append(columnList, sensor)
-			stmt.Close()
-		}
-	}
+	args[1] = s.Device
+	args[2] = s.Location
+	args[3] = sensorDataSS.ShrinkMapToString(s.Sensors["bluetooth"])
 
-	// organize arguments in the correct order
-	for _, sensor := range columnList {
-		if _, ok := s.Sensors[sensor]; !ok {
-			continue
-		}
-		argsQ = append(argsQ, "?")
-		args = append(args, sensorDataSS.ShrinkMapToString(s.Sensors[sensor]))
-	}
-
-	// only use the columns that are in the payload
-	newColumnList := make([]string, len(columnList))
-	j := 0
-	for i, c := range columnList {
-		if i >= 3 {
-			if _, ok := s.Sensors[c]; !ok {
-				continue
-			}
-		}
-		newColumnList[j] = c
-		j++
-	}
-	newColumnList = newColumnList[:j]
-
-	sqlStatement := "insert or replace into sensors(" + strings.Join(newColumnList, ",") + ") values (" + strings.Join(argsQ, ",") + ")"
-	stmt, err := tx.Prepare(sqlStatement)
-	// logger.Log.Debug("columns", columnList)
-	// logger.Log.Debug("args", args)
+	sqlStatement := "insert into sensors(timestamp,deviceid,locationid,bluetooth) values (?,?,?,?)"
+	stmt, err := d.db.Prepare(sqlStatement)
 	if err != nil {
 		return errors.Wrap(err, "AddSensor, prepare "+sqlStatement)
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(args...)
-	if err != nil {
+	if _, err = stmt.Exec(args...); err != nil {
 		return errors.Wrap(err, "AddSensor, execute")
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		return errors.Wrap(err, "AddSensor")
 	}
 
 	// update the map key slimmer
@@ -447,7 +375,7 @@ func (d *Database) NumDevices() (num int, err error) {
 
 func (d *Database) GetDeviceFirstTimeFromDevices(devices []string) (firstTime map[string]time.Time, err error) {
 	firstTime = make(map[string]time.Time)
-	query := fmt.Sprintf("select n,t from (select devices.name as n,sensors.timestamp as t from sensors inner join devices on sensors.deviceid=devices.id WHERE devices.name IN ('%s') order by timestamp desc) group by n", strings.Join(devices, "','"))
+	query := fmt.Sprintf("select d.name as n, max(s.timestamp) as t from sensors as s where devices.name IN ('%s') left join devices as d on s.deviceid = d.id group by d.id", strings.Join(devices, "','"))
 
 	stmt, err := d.db.Prepare(query)
 	if err != nil {

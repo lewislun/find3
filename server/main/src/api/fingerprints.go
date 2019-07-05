@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/schollz/find3/server/main/src/database"
 	"github.com/schollz/find3/server/main/src/models"
 )
@@ -23,26 +24,29 @@ func init() {
 }
 
 // SaveSensorData will add sensor data to the database
-func SaveSensorData(p models.SensorData) (err error) {
-	err = p.Validate()
+func SaveSensorData(s models.SensorData) (err error) {
+	if err = s.Validate(); err != nil {
+		err = errors.Wrap(err, "problem validating data")
+		return
+	}
+
+	db, err := database.Open(s.Family)
 	if err != nil {
 		return
 	}
-	db, err := database.Open(p.Family)
-	if err != nil {
-		return
+	defer db.Close()
+
+	err = db.AddSensor(s)
+	if s.GPS.Longitude != 0 && s.GPS.Latitude != 0 {
+		db.SetGPS(s)
 	}
-	err = db.AddSensor(p)
-	if p.GPS.Longitude != 0 && p.GPS.Latitude != 0 {
-		db.SetGPS(p)
-	}
-	db.Close()
-	if err != nil {
-		return
-	}
+
 	/* disable auto calibration
-	if p.Location != "" {
-		go updateCounter(p.Family)
+	if err != nil {
+		return
+	}
+	if s.Location != "" {
+		go updateCounter(s.Family)
 	}
 	*/
 	return
