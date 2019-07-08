@@ -546,7 +546,7 @@ func (d *Database) GetDeviceCounts() (counts map[string]int, err error) {
 
 func (d *Database) GetLocationCounts() (counts map[string]int, err error) {
 	counts = make(map[string]int)
-	query := "SELECT locations.name,count(sensors.timestamp) as num from sensors inner join locations on sensors.locationid=locations.id group by sensors.locationid"
+	query := "SELECT locationid, count(timestamp) as num from sensors group by locationid"
 	stmt, err := d.db.Prepare(query)
 	if err != nil {
 		err = errors.Wrap(err, query)
@@ -881,7 +881,7 @@ func (d *Database) Delete() (err error) {
 // Open will open the database for transactions by first aquiring a filelock.
 func Open(family string, readOnly ...bool) (d *Database, err error) {
 	d = new(Database)
-	d.family = strings.TrimSpace(family)
+	d.family = strings.ToLower(strings.TrimSpace(family))
 	d.name = "find3_" + d.family
 
 	// obtain a lock on the database

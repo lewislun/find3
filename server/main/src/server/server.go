@@ -566,8 +566,8 @@ func Run() (err error) {
 	r.POST("/data", handlerData)             // typical data handler
 	r.POST("/classify", handlerDataClassify) // classify a fingerprint
 	r.POST("/passive", handlerReverse)       // typical data handler
-	r.POST("/learn", handlerFIND)            // backwards-compatible with FIND for learning
-	r.POST("/track", handlerFIND)            // backwards-compatible with FIND for tracking
+	//r.POST("/learn", handlerFIND)            // backwards-compatible with FIND for learning
+	//r.POST("/track", handlerFIND)            // backwards-compatible with FIND for tracking
 	logger.Log.Infof("Running on 0.0.0.0:%s", Port)
 
 	err = r.Run(":" + Port) // listen and serve on 0.0.0.0:8080
@@ -732,22 +732,19 @@ func handlerApiV1ByLocation(c *gin.Context) {
 
 func handlerApiV1Location(c *gin.Context) {
 	s, analysis, err := func(c *gin.Context) (s models.SensorData, analysis models.LocationAnalysis, err error) {
-		family := strings.ToLower(strings.TrimSpace(c.Param("family")))
 		device := strings.TrimSpace(c.Param("device")[1:])
+		family := c.Param("family")
 
 		d, err := database.Open(family, true)
 		if err != nil {
 			return
 		}
-		s, err = d.GetLatest(device)
-		d.Close()
-		if err != nil {
+		defer d.Close()
+		if s, err = d.GetLatest(device); err != nil {
 			return
 		}
-		analysis, err = api.AnalyzeSensorData(s)
-		if err != nil {
-			err = api.Calibrate(family, true)
-			if err != nil {
+		if analysis, err = api.AnalyzeSensorData(s); err != nil {
+			if api.Calibrate(family, true); err != nil {
 				logger.Log.Warn(err)
 				return
 			}
