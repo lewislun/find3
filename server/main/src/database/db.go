@@ -182,7 +182,6 @@ func (d *Database) GetMany(keyValues map[string]interface{}) (err error) {
 // Set will set a value in the database, when using it like a keystore.
 func (d *Database) Set(key string, value interface{}) (err error) {
 	var b []byte
-	b, err = json.Marshal(value)
 	if b, err = json.Marshal(value); err != nil {
 		return
 	}
@@ -234,29 +233,19 @@ func (d *Database) AddPrediction(timestamp int64, aidata []models.LocationPredic
 	}
 
 	var b []byte
-	b, err = json.Marshal(aidata)
-	if err != nil {
+	if b, err = json.Marshal(aidata); err != nil {
 		return err
 	}
-	tx, err := d.db.Begin()
-	if err != nil {
-		return errors.Wrap(err, "begin AddPrediction")
-	}
-	stmt, err := tx.Prepare("insert or replace into location_predictions (timestamp,prediction) values (?, ?)")
+	stmt, err := d.db.Prepare("insert into location_predictions (timestamp,prediction) values (?,?) on duplicate key update prediction=?")
 	if err != nil {
 		return errors.Wrap(err, "stmt AddPrediction")
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(timestamp, string(b))
-	if err != nil {
+	if _, err = stmt.Exec(timestamp, string(b), string(b)); err != nil {
 		return errors.Wrap(err, "exec AddPrediction")
 	}
 
-	err = tx.Commit()
-	if err != nil {
-		return errors.Wrap(err, "commit AddPrediction")
-	}
 	return
 }
 

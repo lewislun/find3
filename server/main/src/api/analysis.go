@@ -189,9 +189,9 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 	if err != nil {
 		return
 	}
+	defer d.Close()
 	var algorithmEfficacy map[string]map[string]models.BinaryStats
 	d.Get("AlgorithmEfficacy", &algorithmEfficacy)
-	d.Close()
 	aidata.Guesses = determineBestGuess(aidata, algorithmEfficacy)
 
 	if aidata.IsUnknown {
@@ -338,8 +338,6 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 
 	var rollingData models.ReverseRollingData
 	errGotRollingData := d.Get("ReverseRollingData", &rollingData)
-
-	d.Close()
 
 	locations := make(map[string][]models.ByLocationDevice)
 	for _, s := range sensors {

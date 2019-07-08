@@ -75,7 +75,7 @@ def classify():
 
     classified = ai.classify(payload['sensor_data'])
 
-    logger.debug("classifed for {} {:d} ms".format(
+    logger.debug("classified for {} {:d} ms".format(
         payload['sensor_data']['f'], int(1000 * (t - time.time()))))
     return jsonify({"success": True, "message": "data analyzed", 'analysis': classified})
 

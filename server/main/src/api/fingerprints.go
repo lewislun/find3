@@ -58,8 +58,8 @@ func SavePrediction(s models.SensorData, p models.LocationAnalysis) (err error) 
 	if err != nil {
 		return
 	}
+	defer db.Close()
 	err = db.AddPrediction(s.Timestamp, p.Guesses)
-	db.Close()
 	return
 }
 
