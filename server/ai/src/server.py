@@ -1,6 +1,5 @@
 import os
 import time
-import base58
 import logging
 
 from expiringdict import ExpiringDict
@@ -28,10 +27,6 @@ app = Flask(__name__)
 from learn import AI
 from plot_locations import plot_data
 ai_cache = ExpiringDict(max_len=100000, max_age_seconds=60)
-
-
-def to_base58(family):
-    return base58.b58encode(family.encode('utf-8')).decode('utf-8')
 
 @app.route('/plot', methods=['POST'])
 def plotdata():
@@ -66,12 +61,11 @@ def classify():
     if 'data_folder' in payload:
         data_folder = payload['data_folder']
 
-    fname = os.path.join(data_folder, to_base58(
-        payload['sensor_data']['f']) + ".find3.ai")
+    fname = os.path.join(data_folder, payload['sensor_data']['f'] + ".find3.ai")
 
     ai = ai_cache.get(payload['sensor_data']['f'])
     if ai == None:
-        ai = AI(to_base58(payload['sensor_data']['f']), data_folder)
+        ai = AI(payload['sensor_data']['f'], data_folder)
         logger.debug("loading {}".format(fname))
         try:
             ai.load(fname)
@@ -103,7 +97,7 @@ def learn():
 
     logger.debug(data_folder)
 
-    ai = AI(to_base58(payload['family']), data_folder)
+    ai = AI(payload['family'], data_folder)
     fname = os.path.join(data_folder, payload['csv_file'])
     try:
         ai.learn(fname)
@@ -111,8 +105,7 @@ def learn():
         return jsonify({"success": False, "message": "could not find '{}'".format(fname)})
 
     print(payload['family'])
-    ai.save(os.path.join(data_folder, to_base58(
-        payload['family']) + ".find3.ai"))
+    ai.save(os.path.join(data_folder, payload['family']) + ".find3.ai")
     ai_cache[payload['family']] = ai
     return jsonify({"success": True, "message": "calibrated data"})
 
