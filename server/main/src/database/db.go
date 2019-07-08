@@ -584,7 +584,7 @@ func (d *Database) GetLocationCounts() (counts map[string]int, err error) {
 
 // GetAllForClassification will return a sensor data for classifying
 func (d *Database) GetAllForClassification() (s []models.SensorData, err error) {
-	return d.GetAllFromQuery("SELECT * FROM sensors WHERE sensors.locationid !='' ORDER BY timestamp")
+	return d.GetAllFromQuery("SELECT timestamp, deviceid, locationid, bluetooth FROM sensors WHERE sensors.locationid !='' ORDER BY timestamp")
 }
 
 // GetAllNotForClassification will return a sensor data for classifying
@@ -996,19 +996,12 @@ func (d *Database) GetAllFromPreparedQuery(query string, args ...interface{}) (s
 	return
 }
 
-func (d *Database) getRows(rows *sql.Rows) (s []models.SensorData, err error) {
-	// first get the columns
-	logger.Log.Debug("getting columns")
-	columnList, err := d.Columns()
-	if err != nil {
-		return
-	}
+func (d *Database) getRows(rows *sql.Rows) (sensorData []models.SensorData, err error) {
 
 	// get the string sizer for the sensor data
 	logger.Log.Debug("getting sensorstringsizer")
 	var sensorDataStringSizerString string
-	err = d.Get("sensorDataStringSizer", &sensorDataStringSizerString)
-	if err != nil {
+	if err = d.Get("sensorDataStringSizer", &sensorDataStringSizerString); err != nil {
 		return
 	}
 	sensorDataSS, err := stringsizer.New(sensorDataStringSizerString)
@@ -1016,70 +1009,40 @@ func (d *Database) getRows(rows *sql.Rows) (s []models.SensorData, err error) {
 		return
 	}
 
-	// logger.Log.Debug("getting devices")
-	// deviceIDToName, err := d.GetIDToName("devices")
-	// if err != nil {
-	// 	return
-	// }
-
-	logger.Log.Debug("getting locations")
-	locationIDToName, err := d.GetIDToName("locations")
-	if err != nil {
-		return
-	}
-	logger.Log.Debug("got locations")
-
-	s = []models.SensorData{}
-	// loop through rows
+	// loop through rows of sql result
+	sensorData = []models.SensorData{}
 	for rows.Next() {
-		var arr []interface{}
-		for i := 0; i < len(columnList); i++ {
-			arr = append(arr, new(interface{}))
-		}
-		err = rows.Scan(arr...)
-		if err != nil {
+		var (
+			timestamp  int64
+			deviceid   string
+			locationid string
+			bluetooth  string
+		)
+		if err = rows.Scan(&timestamp, &deviceid, &locationid, &bluetooth); err != nil {
 			err = errors.Wrap(err, "getRows")
 			return
 		}
-		deviceID := string((*arr[1].(*interface{})).(string))
-		s0 := models.SensorData{
-			// the underlying value of the interface pointer and cast it to a pointer interface to cast to a byte to cast to a string
-			Timestamp: int64((*arr[0].(*interface{})).(int64)),
+
+		s := models.SensorData{
+			Timestamp: timestamp,
 			Family:    d.family,
-			Device:    deviceID,
-			Location:  locationIDToName[string((*arr[2].(*interface{})).(string))],
+			Device:    deviceid,
+			Location:  locationid,
 			Sensors:   make(map[string]map[string]interface{}),
 		}
-		// add in the sensor data
-		for i, colName := range columnList {
-			if i < 3 {
-				continue
-			}
-			if *arr[i].(*interface{}) == nil {
-				continue
-			}
-			shortenedJSON := string((*arr[i].(*interface{})).(string))
-			s0.Sensors[colName], err = sensorDataSS.ExpandMapFromString(shortenedJSON)
-			if err != nil {
-				return
-			}
+		shortenedJSON := bluetooth
+		s.Sensors["bluetooth"], err = sensorDataSS.ExpandMapFromString(shortenedJSON)
+		if err != nil {
+			return
 		}
-		s = append(s, s0)
+
+		sensorData = append(sensorData, s)
 	}
-	err = rows.Err()
-	if err != nil {
+
+	if err = rows.Err(); err != nil {
 		err = errors.Wrap(err, "getRows")
 	}
 
-	for i := range s {
-		deviceName, errFind := d.GetName("devices", s[i].Device)
-		if errFind != nil {
-			err = errors.Wrap(errFind, "can't get name of "+s[i].Device)
-			logger.Log.Error(err)
-			continue
-		}
-		s[i].Device = deviceName
-	}
 	return
 }
 

@@ -27,11 +27,11 @@ func Calibrate(family string, crossValidation ...bool) (err error) {
 	if err != nil {
 		return
 	}
+	defer db.Close()
 	datas, err := db.GetAllForClassification()
 	if err != nil {
 		return
 	}
-	db.Close()
 
 	datasLearn, datasTest, err := splitDataForLearning(datas, crossValidation...)
 	if err != nil {
