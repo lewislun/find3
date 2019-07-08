@@ -997,7 +997,6 @@ func (d *Database) GetAllFromPreparedQuery(query string, args ...interface{}) (s
 }
 
 func (d *Database) getRows(rows *sql.Rows) (sensorData []models.SensorData, err error) {
-
 	// get the string sizer for the sensor data
 	logger.Log.Debug("getting sensorstringsizer")
 	var sensorDataStringSizerString string
@@ -1010,14 +1009,14 @@ func (d *Database) getRows(rows *sql.Rows) (sensorData []models.SensorData, err 
 	}
 
 	// loop through rows of sql result
+	var (
+		timestamp  int64
+		deviceid   string
+		locationid string
+		bluetooth  string
+	)
 	sensorData = []models.SensorData{}
 	for rows.Next() {
-		var (
-			timestamp  int64
-			deviceid   string
-			locationid string
-			bluetooth  string
-		)
 		if err = rows.Scan(&timestamp, &deviceid, &locationid, &bluetooth); err != nil {
 			err = errors.Wrap(err, "getRows")
 			return
@@ -1030,12 +1029,9 @@ func (d *Database) getRows(rows *sql.Rows) (sensorData []models.SensorData, err 
 			Location:  locationid,
 			Sensors:   make(map[string]map[string]interface{}),
 		}
-		shortenedJSON := bluetooth
-		s.Sensors["bluetooth"], err = sensorDataSS.ExpandMapFromString(shortenedJSON)
-		if err != nil {
+		if s.Sensors["bluetooth"], err = sensorDataSS.ExpandMapFromString(bluetooth); err != nil {
 			return
 		}
-
 		sensorData = append(sensorData, s)
 	}
 
