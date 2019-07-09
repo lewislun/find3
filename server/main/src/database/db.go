@@ -22,6 +22,10 @@ import (
 	"github.com/schollz/stringsizer"
 )
 
+// Mysql config
+var mysqlUser = "root"
+var mysqlPW = "root"
+
 // MakeTables creates two tables, a `keystore` table:
 //
 // 	KEY (TEXT)	VALUE (TEXT)
@@ -891,7 +895,7 @@ func Open(family string, readOnly ...bool) (d *Database, err error) {
 	// TODO: check if it is a new database
 
 	// open database
-	if d.db, err = sql.Open("mysql", "root:root@/"+d.name); err == nil {
+	if d.db, err = sql.Open("mysql", fmt.Sprintf("%s:%s@/%s", mysqlUser, mysqlPW, d.name)); err == nil {
 		logger.Log.Debug("opened mysql database")
 	}
 
