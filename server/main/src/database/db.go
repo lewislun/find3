@@ -583,12 +583,8 @@ func (d *Database) GetAllNotForClassification() (s []models.SensorData, err erro
 
 // GetLatest will return a sensor data for classifying
 func (d *Database) GetLatest(device string) (s models.SensorData, err error) {
-	deviceID, err := d.GetID("devices", device)
-	if err != nil {
-		return
-	}
 	var sensors []models.SensorData
-	sensors, err = d.GetAllFromPreparedQuery("SELECT * FROM sensors WHERE deviceID=? ORDER BY timestamp DESC LIMIT 1", deviceID)
+	sensors, err = d.GetAllFromPreparedQuery("SELECT * FROM sensors WHERE deviceid=? ORDER BY timestamp DESC LIMIT 1", strings.TrimSpace(device))
 	if err != nil {
 		return
 	}

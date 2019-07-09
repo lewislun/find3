@@ -66,9 +66,8 @@ func (a *Algorithm) Classify(data models.SensorData) (pl PairList, err error) {
 			err = err2
 			return
 		}
-		err = db.Get("NB1", &a.Data)
-		db.Close()
-		if err != nil {
+		defer db.Close()
+		if err = db.Get("NB1", &a.Data); err != nil {
 			return
 		}
 		a.isLoaded = true

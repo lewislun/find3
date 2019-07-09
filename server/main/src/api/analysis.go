@@ -142,7 +142,7 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 
 	aResult := <-aChan
 	if aResult.err != nil || len(aResult.aidata.Predictions) == 0 {
-		err = errors.Wrap(aResult.err, "problem with machine learnaing")
+		err = errors.Wrap(aResult.err, "problem with machine learning")
 		logger.Log.Error(aResult.err)
 		return
 	}

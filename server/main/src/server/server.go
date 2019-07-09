@@ -732,8 +732,8 @@ func handlerApiV1ByLocation(c *gin.Context) {
 
 func handlerApiV1Location(c *gin.Context) {
 	s, analysis, err := func(c *gin.Context) (s models.SensorData, analysis models.LocationAnalysis, err error) {
-		device := strings.TrimSpace(c.Param("device")[1:])
 		family := c.Param("family")
+		device := c.Param("device")[1:]
 
 		d, err := database.Open(family, true)
 		if err != nil {
@@ -761,20 +761,19 @@ func handlerApiV1Location(c *gin.Context) {
 func handlerApiV1LocationSimple(c *gin.Context) {
 	s, analysis, err := func(c *gin.Context) (s models.SensorData, analysis models.LocationAnalysis, err error) {
 		family := strings.ToLower(strings.TrimSpace(c.Param("family")))
-		device := strings.TrimSpace(c.Param("device")[1:])
+		device := c.Param("device")[1:]
+
 		logger.Log.Debugf("[%s] getting location for %s", family, device)
 
 		d, err := database.Open(family, true)
 		if err != nil {
 			return
 		}
-		s, err = d.GetLatest(device)
-		d.Close()
-		if err != nil {
+		defer d.Close()
+		if s, err = d.GetLatest(device); err != nil {
 			return
 		}
-		analysis, err = api.AnalyzeSensorData(s)
-		if err != nil {
+		if analysis, err = api.AnalyzeSensorData(s); err != nil {
 			err = api.Calibrate(family, true)
 			if err != nil {
 				logger.Log.Warn(err)
