@@ -39,7 +39,7 @@ func GenerateImages(family string) {
 	}
 	body := bytes.NewReader(payloadBytes)
 
-	req, err := http.NewRequest("POST", "http://localhost:"+AIPort+"/plot", body)
+	req, err := http.NewRequest("POST", "http://127.0.0.1:"+AIPort+"/plot", body)
 	if err != nil {
 		logger.Log.Error(err)
 		return

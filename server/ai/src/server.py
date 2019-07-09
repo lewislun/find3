@@ -109,6 +109,9 @@ def learn():
     ai_cache[payload['family']] = ai
     return jsonify({"success": True, "message": "calibrated data"})
 
+@app.route('/ping', methods=['GET'])
+def ping():
+    return jsonify({'message': 'pong'})
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0')
+    app.run(host="0.0.0.0", threaded=True)
