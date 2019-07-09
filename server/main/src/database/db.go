@@ -25,6 +25,7 @@ import (
 // Mysql config
 var mysqlUser = "root"
 var mysqlPW = "root"
+var dbNamePrefix = "find3_"
 
 // MakeTables creates two tables, a `keystore` table:
 //
@@ -895,7 +896,7 @@ func Open(family string, readOnly ...bool) (d *Database, err error) {
 	// TODO: check if it is a new database
 
 	// open database
-	if d.db, err = sql.Open("mysql", fmt.Sprintf("%s:%s@/%s", mysqlUser, mysqlPW, d.name)); err == nil {
+	if d.db, err = sql.Open("mysql", fmt.Sprintf("%s:%s@/%s%s", mysqlUser, mysqlPW, dbNamePrefix, d.family)); err == nil {
 		logger.Log.Debug("opened mysql database")
 	}
 
