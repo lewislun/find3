@@ -566,6 +566,7 @@ func Run() (err error) {
 	r.POST("/data", handlerData)             // typical data handler
 	r.POST("/classify", handlerDataClassify) // classify a fingerprint
 	r.POST("/passive", handlerReverse)       // typical data handler
+	r.POST("/locate", handlerLocate)
 	//r.POST("/learn", handlerFIND)            // backwards-compatible with FIND for learning
 	//r.POST("/track", handlerFIND)            // backwards-compatible with FIND for tracking
 	logger.Log.Infof("Running on 0.0.0.0:%s", Port)
@@ -584,6 +585,35 @@ func ping(c *gin.Context) {
 
 func handleTest(c *gin.Context) {
 	c.String(http.StatusOK, "ok")
+}
+
+func handlerLocate(c *gin.Context) {
+	analysis, err := func(c *gin.Context) (analysis models.LocationAnalysis, err error) {
+
+		// get data
+		var s models.SensorData
+		if err = c.BindJSON(&s); err != nil {
+			err = errors.Wrap(err, "problem binding data")
+			return
+		}
+
+		// analyze data
+		if analysis, err = api.AnalyzeSensorData(s); err != nil {
+			return
+		}
+		// TODO: save data in db
+
+		// success
+		logger.Log.Debugf("[%s] /data %+v", s.Family, s)
+		return
+	}(c)
+
+	if err != nil {
+		logger.Log.Errorf("problem locating: %s", err.Error())
+		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": false})
+	} else {
+		c.JSON(http.StatusOK, gin.H{"guesses": analysis.Guesses, "success": true})
+	}
 }
 
 func handlerApiV1Devices(c *gin.Context) {
