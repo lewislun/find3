@@ -2,7 +2,6 @@ package api
 
 import (
 	"sync"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/schollz/find3/server/main/src/database"
@@ -63,6 +62,7 @@ func SavePrediction(s models.SensorData, p models.LocationAnalysis) (err error) 
 	return
 }
 
+/*
 func updateCounter(family string) {
 	globalUpdateCounter.Lock()
 	if _, ok := globalUpdateCounter.Count[family]; !ok {
@@ -101,3 +101,4 @@ func updateCounter(family string) {
 
 	go Calibrate(family, true)
 }
+*/

@@ -52,7 +52,7 @@ type AnalysisResponse struct {
 	Success bool                    `json:"success"`
 }
 
-func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err error) {
+func AnalyzeSensorData(s models.SensorData, db *database.Database) (aidata models.LocationAnalysis, err error) {
 	startAnalyze := time.Now()
 
 	aidata.Guesses = []models.LocationPrediction{}
@@ -183,13 +183,8 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 	// }
 
 	// get efficacy
-	d, err := database.Open(s.Family)
-	if err != nil {
-		return
-	}
-	defer d.Close()
 	var algorithmEfficacy map[string]map[string]models.BinaryStats
-	d.Get("AlgorithmEfficacy", &algorithmEfficacy)
+	db.Get("AlgorithmEfficacy", &algorithmEfficacy)
 
 	// get ai results
 	aResult := <-aChan
@@ -213,12 +208,7 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 	// add prediction to the database
 	// adding predictions uses up a lot of space
 	go func() {
-		d, err := database.Open(s.Family)
-		if err != nil {
-			return
-		}
-		defer d.Close()
-		errInsert := d.AddPrediction(s.Timestamp, aidata.Guesses)
+		errInsert := db.AddPrediction(s.Timestamp, aidata.Guesses)
 		if errInsert != nil {
 			logger.Log.Errorf("[%s] problem inserting: %s", s.Family, errInsert.Error())
 		}
@@ -290,24 +280,18 @@ func (p PairList) Len() int           { return len(p) }
 func (p PairList) Less(i, j int) bool { return p[i].Value < p[j].Value }
 func (p PairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
-func GetByLocation(family string, minutesAgoInt int, showRandomized bool, activeMinsThreshold int, minScanners int, minProbability float64, deviceCounts map[string]int) (byLocations []models.ByLocation, err error) {
+func GetByLocation(family string, minutesAgoInt int, showRandomized bool, activeMinsThreshold int, minScanners int, minProbability float64, deviceCounts map[string]int, db *database.Database) (byLocations []models.ByLocation, err error) {
 	millisecondsAgo := int64(minutesAgoInt * 60 * 1000)
 
-	d, err := database.Open(family, true)
-	if err != nil {
-		return
-	}
-	defer d.Close()
-
 	startTime := time.Now()
-	sensors, err := d.GetSensorFromGreaterTime(millisecondsAgo)
+	sensors, err := db.GetSensorFromGreaterTime(millisecondsAgo)
 	logger.Log.Debugf("[%s] got sensor from greater time %s", family, time.Since(startTime))
 
 	startTime = time.Now()
 	preAnalyzed := make(map[int64][]models.LocationPrediction)
 	devicesToCheckMap := make(map[string]struct{})
 	for _, sensor := range sensors {
-		a, errGet := d.GetPrediction(sensor.Timestamp)
+		a, errGet := db.GetPrediction(sensor.Timestamp)
 		if errGet != nil {
 			continue
 		}
@@ -327,7 +311,7 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 
 	startTime = time.Now()
 	if len(deviceCounts) == 0 {
-		deviceCounts, err = d.GetDeviceCountsFromDevices(devicesToCheck)
+		deviceCounts, err = db.GetDeviceCountsFromDevices(devicesToCheck)
 		if err != nil {
 			err = errors.Wrap(err, "could not get devices")
 			return
@@ -336,7 +320,7 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 	logger.Log.Debugf("[%s] got device counts %s", family, time.Since(startTime))
 
 	startTime = time.Now()
-	deviceFirstTime, err := d.GetDeviceFirstTimeFromDevices(devicesToCheck)
+	deviceFirstTime, err := db.GetDeviceFirstTimeFromDevices(devicesToCheck)
 	if err != nil {
 		err = errors.Wrap(err, "problem getting device first time")
 		return
@@ -344,7 +328,7 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 	logger.Log.Debugf("[%s] got device first-time %s", family, time.Since(startTime))
 
 	var rollingData models.ReverseRollingData
-	errGotRollingData := d.Get("ReverseRollingData", &rollingData)
+	errGotRollingData := db.Get("ReverseRollingData", &rollingData)
 
 	locations := make(map[string][]models.ByLocationDevice)
 	for _, s := range sensors {
@@ -371,7 +355,7 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 			a = preAnalyzed[s.Timestamp]
 		} else {
 			var aidata models.LocationAnalysis
-			aidata, err = AnalyzeSensorData(s)
+			aidata, err = AnalyzeSensorData(s, db)
 			if err != nil {
 				return
 			}

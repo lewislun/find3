@@ -26,13 +26,22 @@ var UseSSL = false
 var UseMQTT = false
 var MinimumPassive = -1
 
+// Database object
+var db *database.Database
+
 // Run will start the server listening on the specified port
 func Run() (err error) {
 	defer logger.Log.Flush()
 
+	if db, err = database.Open("default"); err != nil {
+		logger.Log.Error("cannot open db, stopping...")
+		return
+	}
+	defer db.Close()
+
 	if UseMQTT {
 		// setup MQTT
-		err = mqtt.Setup()
+		err = mqtt.Setup(db)
 		if err != nil {
 			logger.Log.Warn(err)
 		}
@@ -59,51 +68,27 @@ func Run() (err error) {
 	})
 	r.POST("/", func(c *gin.Context) {
 		family := strings.ToLower(c.PostForm("inputFamily"))
-		db, err := database.Open(family, true)
-		if err == nil {
-			db.Close()
-			c.Redirect(http.StatusMovedPermanently, "/view/dashboard/"+family)
-		} else {
-			c.HTML(http.StatusOK, "login.tmpl", gin.H{
-				"Message": template.HTML(fmt.Sprintf(`Family '%s' does not exist. Follow <a href="https://www.internalpositioning.com/doc/tracking_your_phone.md" target="_blank">these instructions</a> to get started.`, family)),
-			})
-		}
+		c.Redirect(http.StatusMovedPermanently, "/view/dashboard/"+family)
 
+		//c.HTML(http.StatusOK, "login.tmpl", gin.H{
+		//	"Message": template.HTML(fmt.Sprintf(`Family '%s' does not exist. Follow <a href="https://www.internalpositioning.com/doc/tracking_your_phone.md" target="_blank">these instructions</a> to get started.`, family)),
+		//})
 	})
 	r.DELETE("/api/v1/database/:family", func(c *gin.Context) {
-		family := strings.ToLower(c.Param("family"))
-		db, err := database.Open(family, true)
-		if err == nil {
-			db.Delete()
-			db.Close()
-			c.JSON(200, gin.H{"success": true, "message": "deleted " + family})
-		} else {
-			c.JSON(200, gin.H{"success": false, "message": err.Error()})
-		}
-
+		c.JSON(200, gin.H{"success": false, "message": "not implemented"})
 	})
 	r.DELETE("/api/v1/location/:family/:location", func(c *gin.Context) {
 		family := strings.ToLower(c.Param("family"))
-		db, err := database.Open(family, true)
+		err = db.DeleteLocation(c.Param("location"))
 		if err == nil {
-			err = db.DeleteLocation(c.Param("location"))
-			db.Close()
-			if err == nil {
-				c.JSON(200, gin.H{"success": true, "message": "deleted location '" + c.Param("location") + "' for " + family})
-				return
-			}
+			c.JSON(200, gin.H{"success": true, "message": "deleted location '" + c.Param("location") + "' for " + family})
+			return
 		}
 		c.JSON(200, gin.H{"success": false, "message": err.Error()})
 	})
 	r.GET("/view/analysis/:family", func(c *gin.Context) {
 		family := strings.ToLower(c.Param("family"))
-		d, err := database.Open(family, true)
-		if err != nil {
-			c.String(200, err.Error())
-			return
-		}
-		locationList, err := d.GetLocations()
-		d.Close()
+		locationList, err := db.GetLocations()
 		if err != nil {
 			logger.Log.Warn("could not get locations")
 			c.String(200, err.Error())
@@ -251,26 +236,18 @@ func Run() (err error) {
 		}
 	})
 	r.GET("/api/v1/database/:family", func(c *gin.Context) {
-		db, err := database.Open(strings.ToLower(c.Param("family")), true)
+		var dumped string
+		dumped, err = db.Dump()
 		if err == nil {
-			var dumped string
-			dumped, err = db.Dump()
-			db.Close()
-			if err == nil {
-				c.String(200, dumped)
-				return
-			}
+			c.String(200, dumped)
+			return
 		}
 		c.JSON(200, gin.H{"success": false, "message": err.Error()})
 	})
 	r.GET("/api/v1/data/:family", func(c *gin.Context) {
 		var sensors []models.SensorData
 		var message string
-		db, err := database.Open(strings.ToLower(c.Param("family")), true)
-		if err == nil {
-			sensors, err = db.GetAllForClassification()
-			db.Close()
-		}
+		sensors, err = db.GetAllForClassification()
 		if err != nil {
 			message = err.Error()
 		} else {
@@ -351,18 +328,11 @@ func Run() (err error) {
 		err := func(family string) (err error) {
 			startTime := time.Now()
 			var errorMessage string
-
-			d, err := database.Open(family, true)
-			if err != nil {
-				err = errors.Wrap(err, "You need to add learning data first")
-				return
-			}
-			defer d.Close()
 			var efficacy Efficacy
 
 			minutesAgoInt := 60
 			millisecondsAgo := int64(minutesAgoInt * 60 * 1000)
-			sensors, err := d.GetSensorFromGreaterTime(millisecondsAgo)
+			sensors, err := db.GetSensorFromGreaterTime(millisecondsAgo)
 			logger.Log.Debugf("[%s] got sensor from greater time %s", family, time.Since(startTime))
 			devicesToCheckMap := make(map[string]struct{})
 			for _, sensor := range sensors {
@@ -378,7 +348,7 @@ func Run() (err error) {
 			logger.Log.Debugf("[%s] found %d devices to check", family, len(devicesToCheck))
 
 			logger.Log.Debugf("[%s] getting device counts", family)
-			deviceCounts, err := d.GetDeviceCountsFromDevices(devicesToCheck)
+			deviceCounts, err := db.GetDeviceCountsFromDevices(devicesToCheck)
 			if err != nil {
 				err = errors.Wrap(err, "could not get devices")
 				return
@@ -397,7 +367,7 @@ func Run() (err error) {
 			logger.Log.Debugf("found %d devices", len(deviceList))
 
 			logger.Log.Debugf("[%s] getting locations", family)
-			locationList, err := d.GetLocations()
+			locationList, err := db.GetLocations()
 			if err != nil {
 				logger.Log.Warn("could not get locations")
 			}
@@ -405,7 +375,7 @@ func Run() (err error) {
 			logger.Log.Debugf("found %d locations", len(locationList))
 
 			logger.Log.Debugf("[%s] total learned count", family)
-			efficacy.TotalCount, err = d.TotalLearnedCount()
+			efficacy.TotalCount, err = db.TotalLearnedCount()
 			if err != nil {
 				logger.Log.Warn("could not get TotalLearnedCount")
 			}
@@ -419,13 +389,13 @@ func Run() (err error) {
 			keyValues["LastCalibrationTime"] = &efficacy.LastCalibrationTime
 			keyValues["AccuracyBreakdown"] = &accuracyBreakdown
 			keyValues["AlgorithmEfficacy"] = &confusionMetrics
-			if err := d.GetMany(keyValues); err != nil {
+			if err := db.GetMany(keyValues); err != nil {
 				err = errors.Wrap(err, "could not get info")
 			}
 			efficacy.PercentCorrect = int64(100 * percentFloat64)
 
 			logger.Log.Debugf("[%s] getting location count", family)
-			locationCounts, err := d.GetLocationCounts()
+			locationCounts, err := db.GetLocationCounts()
 			if err != nil {
 				logger.Log.Warn("could not get location counts")
 			}
@@ -441,14 +411,14 @@ func Run() (err error) {
 				i++
 			}
 			var rollingData models.ReverseRollingData
-			errRolling := d.Get("ReverseRollingData", &rollingData)
+			errRolling := db.Get("ReverseRollingData", &rollingData)
 			passiveTable := []DeviceTable{}
 			scannerList := []string{}
 			if errRolling == nil {
 				passiveTable = make([]DeviceTable, len(rollingData.DeviceLocation))
 				i := 0
 				for device := range rollingData.DeviceLocation {
-					s, errOpen := d.GetLatest(device)
+					s, errOpen := db.GetLatest(device)
 					if errOpen != nil {
 						continue
 					}
@@ -457,7 +427,7 @@ func Run() (err error) {
 					passiveTable[i].LastSeen = time.Unix(0, s.Timestamp*1000000).UTC()
 					i++
 				}
-				sensors, errGet := d.GetSensorFromGreaterTime(60000 * 15)
+				sensors, errGet := db.GetSensorFromGreaterTime(60000 * 15)
 				if errGet == nil {
 					allScanners := make(map[string]struct{})
 					for _, s := range sensors {
@@ -476,11 +446,9 @@ func Run() (err error) {
 				}
 			}
 
-			d.Close()
-
 			logger.Log.Debugf("[%s] getting by_locations for %d devices", family, len(deviceCounts))
 			// logger.Log.Debug(deviceCounts)
-			byLocations, err := api.GetByLocation(family, 15, false, 3, 0, 0, deviceCounts)
+			byLocations, err := api.GetByLocation(family, 15, false, 3, 0, 0, deviceCounts, db)
 			if err != nil {
 				logger.Log.Warn(err)
 			}
@@ -598,11 +566,11 @@ func handlerLocate(c *gin.Context) {
 		}
 
 		// analyze data
-		if analysis, err = api.AnalyzeSensorData(s); err != nil {
+		if analysis, err = api.AnalyzeSensorData(s, db); err != nil {
 			return
 		}
 		// TODO: save data in db
-		
+
 		return
 	}(c)
 
@@ -616,13 +584,8 @@ func handlerLocate(c *gin.Context) {
 
 func handlerApiV1Devices(c *gin.Context) {
 	err := func(c *gin.Context) (err error) {
-		family := strings.ToLower(strings.TrimSpace(c.Param("family")[1:]))
-		d, err := database.Open(family, true)
-		if err != nil {
-			return
-		}
-		defer d.Close()
-		s, err := d.GetDevices()
+		//family := strings.ToLower(strings.TrimSpace(c.Param("family")[1:]))
+		s, err := db.GetDevices()
 		if err != nil {
 			return
 		}
@@ -644,12 +607,7 @@ func handlerApiV1Locations(c *gin.Context) {
 	locations, err := func(c *gin.Context) (locations []Location, err error) {
 		family := strings.ToLower(strings.TrimSpace(c.Param("family")))
 
-		d, err := database.Open(family, true)
-		if err != nil {
-			return
-		}
-		devices, err := d.GetDevices()
-		d.Close()
+		devices, err := db.GetDevices()
 		if err != nil {
 			return
 		}
@@ -657,22 +615,16 @@ func handlerApiV1Locations(c *gin.Context) {
 		logger.Log.Debugf("[%s] getting information for %d devices", family, len(devices))
 		for i, device := range devices {
 			logger.Log.Debugf("[%s] getting prediction for %s", family, device)
-			d, err = database.Open(family, true)
-			if err != nil {
-				return
-			}
 			locations[i] = Location{Device: device}
-			locations[i].Sensors, err = d.GetLatest(device)
+			locations[i].Sensors, err = db.GetLatest(device)
 			if err != nil {
-				d.Close()
 				continue
 			}
-			predictions, err := d.GetPrediction(locations[i].Sensors.Timestamp)
-			d.Close()
+			predictions, err := db.GetPrediction(locations[i].Sensors.Timestamp)
 			if err == nil && len(predictions) > 0 {
 				locations[i].Prediction = predictions[0]
 			} else {
-				analysis, err := api.AnalyzeSensorData(locations[i].Sensors)
+				analysis, err := api.AnalyzeSensorData(locations[i].Sensors, db)
 				if err != nil {
 					continue
 				}
@@ -700,19 +652,12 @@ func handlerEfficacy(c *gin.Context) {
 	}
 
 	efficacy, err := func(c *gin.Context) (efficacy Efficacy, err error) {
-		family := strings.ToLower(strings.TrimSpace(c.Param("family")))
-
-		d, err := database.Open(family, true)
-		if err != nil {
-			return
-		}
-		defer d.Close()
 
 		keyValues := make(map[string]interface{})
 		keyValues["LastCalibrationTime"] = &efficacy.LastCalibrationTime
 		keyValues["AccuracyBreakdown"] = &efficacy.AccuracyBreakdown
 		keyValues["AlgorithmEfficacy"] = &efficacy.ConfusionMetrics
-		if err := d.GetMany(keyValues); err != nil {
+		if err := db.GetMany(keyValues); err != nil {
 			err = errors.Wrap(err, "could not get efficacy info")
 		}
 
@@ -747,7 +692,7 @@ func handlerApiV1ByLocation(c *gin.Context) {
 			return
 		}
 
-		byLocations, err = api.GetByLocation(family, minutesAgoInt, showRandomized, activeMinsThreshold, minScanners, minProbability, make(map[string]int))
+		byLocations, err = api.GetByLocation(family, minutesAgoInt, showRandomized, activeMinsThreshold, minScanners, minProbability, make(map[string]int), db)
 		return
 	}(c)
 	if err != nil {
@@ -763,16 +708,11 @@ func handlerApiV1Location(c *gin.Context) {
 		family := c.Param("family")
 		device := c.Param("device")[1:]
 
-		d, err := database.Open(family, true)
-		if err != nil {
+		if s, err = db.GetLatest(device); err != nil {
 			return
 		}
-		defer d.Close()
-		if s, err = d.GetLatest(device); err != nil {
-			return
-		}
-		if analysis, err = api.AnalyzeSensorData(s); err != nil {
-			if api.Calibrate(family, true); err != nil {
+		if analysis, err = api.AnalyzeSensorData(s, db); err != nil {
+			if api.Calibrate(family, db, true); err != nil {
 				logger.Log.Warn(err)
 				return
 			}
@@ -793,16 +733,11 @@ func handlerApiV1LocationSimple(c *gin.Context) {
 
 		logger.Log.Debugf("[%s] getting location for %s", family, device)
 
-		d, err := database.Open(family, true)
-		if err != nil {
+		if s, err = db.GetLatest(device); err != nil {
 			return
 		}
-		defer d.Close()
-		if s, err = d.GetLatest(device); err != nil {
-			return
-		}
-		if analysis, err = api.AnalyzeSensorData(s); err != nil {
-			err = api.Calibrate(family, true)
+		if analysis, err = api.AnalyzeSensorData(s, db); err != nil {
+			err = api.Calibrate(family, db, true)
 			if err != nil {
 				logger.Log.Warn(err)
 				return
@@ -842,7 +777,7 @@ func handlerApiV1Calibrate(c *gin.Context) {
 	if family == "" {
 		err = errors.New("invalid family")
 	} else {
-		err = api.Calibrate(family, true)
+		err = api.Calibrate(family, db, true)
 	}
 	message := "calibrated data"
 	if err != nil {
@@ -874,12 +809,7 @@ func handlerMQTT(c *gin.Context) {
 }
 
 func sendOutLocation(family, device string) (s models.SensorData, analysis models.LocationAnalysis, err error) {
-	d, err := database.Open(family, true)
-	if err != nil {
-		return
-	}
-	s, err = d.GetLatest(device)
-	d.Close()
+	s, err = db.GetLatest(device)
 	if err != nil {
 		return
 	}
@@ -887,9 +817,9 @@ func sendOutLocation(family, device string) (s models.SensorData, analysis model
 	if err != nil {
 		return
 	}
-	analysis, err = api.AnalyzeSensorData(s)
+	analysis, err = api.AnalyzeSensorData(s, db)
 	if err != nil {
-		err = api.Calibrate(family, true)
+		err = api.Calibrate(family, db, true)
 		if err != nil {
 			logger.Log.Warn(err)
 			return
@@ -953,13 +883,6 @@ func handlerGPS(c *gin.Context) {
 		d.Location = strings.ToLower(d.Location)
 		d.Family = strings.ToLower(d.Family)
 
-		// open database
-		db, err := database.Open(d.Family)
-		if err != nil {
-			return
-		}
-		defer db.Close()
-
 		// insert data
 		var gpsData map[string]models.SensorData
 		errGet := db.Get("customGPS", &gpsData)
@@ -1004,7 +927,7 @@ func handlerDataClassify(c *gin.Context) {
 			return
 		}
 
-		aidata, err = api.AnalyzeSensorData(d)
+		aidata, err = api.AnalyzeSensorData(d, db)
 		logger.Log.Debugf("[%s] /data %+v", d.Family, d)
 		message = "classified data"
 		return
@@ -1048,13 +971,6 @@ func handlerReverseSettings(c *gin.Context) {
 		d.Family = strings.TrimSpace(strings.ToLower(d.Family))
 		d.Device = strings.TrimSpace(strings.ToLower(d.Device))
 		d.Location = strings.TrimSpace(strings.ToLower(d.Location))
-
-		// open database
-		db, err := database.Open(d.Family)
-		if err != nil {
-			return
-		}
-		defer db.Close()
 
 		var rollingData models.ReverseRollingData
 		err = db.Get("ReverseRollingData", &rollingData)
@@ -1139,13 +1055,6 @@ func handlerReverse(c *gin.Context) {
 			logger.Log.Debugf("[%s] entered passive fingerprint for %s", d.Family, d.Device)
 		}
 
-		// open database
-		db, err := database.Open(d.Family)
-		if err != nil {
-			return
-		}
-		defer db.Close()
-
 		var rollingData models.ReverseRollingData
 		err = db.Get("ReverseRollingData", &rollingData)
 		if err != nil {
@@ -1194,11 +1103,6 @@ func handlerReverse(c *gin.Context) {
 }
 
 func parseRollingData(family string) (err error) {
-	db, err := database.Open(family)
-	if err != nil {
-		return
-	}
-	defer db.Close()
 
 	var rollingData models.ReverseRollingData
 	err = db.Get("ReverseRollingData", &rollingData)
@@ -1301,7 +1205,7 @@ func processSensorData(p models.SensorData, justSave ...bool) (err error) {
 }
 
 func sendOutData(p models.SensorData) (analysis models.LocationAnalysis, err error) {
-	analysis, _ = api.AnalyzeSensorData(p)
+	analysis, _ = api.AnalyzeSensorData(p, db)
 	if len(analysis.Guesses) == 0 {
 		err = errors.New("no guesses")
 		return

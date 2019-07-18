@@ -34,9 +34,11 @@ var (
 
 var (
 	adminClient MQTT.Client
+	db          *database.Database
 )
 
-func Setup() (err error) {
+func Setup(d *database.Database) (err error) {
+	db = d
 	logger, _ = logging.New()
 	if Debug {
 		logger.SetLevel("debug")
@@ -230,7 +232,7 @@ func messageReceived(client MQTT.Client, msg MQTT.Message) {
 }
 
 func sendOutData(p models.SensorData) (analysis models.LocationAnalysis, err error) {
-	analysis, _ = api.AnalyzeSensorData(p)
+	analysis, _ = api.AnalyzeSensorData(p, db)
 	type Payload struct {
 		Sensors models.SensorData           `json:"sensors"`
 		Guesses []models.LocationPrediction `json:"guesses"`

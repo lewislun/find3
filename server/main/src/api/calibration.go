@@ -21,13 +21,8 @@ import (
 )
 
 // Calibrate will send the sensor data for a specific family to the machine learning algorithms
-func Calibrate(family string, crossValidation ...bool) (err error) {
+func Calibrate(family string, db *database.Database, crossValidation ...bool) (err error) {
 	// gather the data
-	db, err := database.Open(family, true)
-	if err != nil {
-		return
-	}
-	defer db.Close()
 	datas, err := db.GetAllForClassification()
 	if err != nil {
 		return
@@ -61,7 +56,7 @@ func Calibrate(family string, crossValidation ...bool) (err error) {
 	}
 
 	if len(crossValidation) > 0 && crossValidation[0] {
-		go findBestAlgorithm(datasTest)
+		go findBestAlgorithm(datasTest, db)
 	}
 	return
 }
@@ -174,7 +169,7 @@ func learnFromData(family string, datas []models.SensorData) (err error) {
 	return
 }
 
-func findBestAlgorithm(datas []models.SensorData) (algorithmEfficacy map[string]map[string]models.BinaryStats, err error) {
+func findBestAlgorithm(datas []models.SensorData, db *database.Database) (algorithmEfficacy map[string]map[string]models.BinaryStats, err error) {
 	if len(datas) == 0 {
 		err = errors.New("no data specified")
 		return
@@ -197,7 +192,7 @@ func findBestAlgorithm(datas []models.SensorData) (algorithmEfficacy map[string]
 	for w := 0; w < workers; w++ {
 		go func(id int, jobs <-chan Job, results chan<- Result) {
 			for job := range jobs {
-				aidata, err := AnalyzeSensorData(job.data)
+				aidata, err := AnalyzeSensorData(job.data, db)
 				if err != nil {
 					logger.Log.Warnf("%s: %+v", err.Error(), job.data)
 				}
@@ -340,14 +335,6 @@ func findBestAlgorithm(datas []models.SensorData) (algorithmEfficacy map[string]
 		accuracyBreakdown[loc] = accuracyBreakdown[loc] / accuracyBreakdownTotal[loc]
 		logger.Log.Infof("[%s] %s accuracy: %2.0f%%", datas[0].Family, loc, accuracyBreakdown[loc]*100)
 	}
-
-	// gather the data
-	db, err := database.Open(datas[0].Family)
-	if err != nil {
-		logger.Log.Error(err)
-		return
-	}
-	defer db.Close()
 
 	err = db.Set("ProbabilityMeans", []float64{goodMean, goodSD, badMean, badSD})
 	if err != nil {
