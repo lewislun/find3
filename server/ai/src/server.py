@@ -26,7 +26,7 @@ app = Flask(__name__)
 
 from learn import AI
 from plot_locations import plot_data
-ai_cache = ExpiringDict(max_len=100000, max_age_seconds=60)
+ai_cache = ExpiringDict(max_len=100000, max_age_seconds=99999999)
 
 @app.route('/plot', methods=['POST'])
 def plotdata():
