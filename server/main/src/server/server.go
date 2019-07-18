@@ -602,9 +602,7 @@ func handlerLocate(c *gin.Context) {
 			return
 		}
 		// TODO: save data in db
-
-		// success
-		logger.Log.Debugf("[%s] /data %+v", s.Family, s)
+		
 		return
 	}(c)
 

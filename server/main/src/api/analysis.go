@@ -141,18 +141,12 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 	// 	cChan <- c{pl: pl, err: err}
 	// }(cChan)
 
-	aResult := <-aChan
-	if aResult.err != nil || len(aResult.aidata.Predictions) == 0 {
-		err = errors.Wrap(aResult.err, "problem with machine learning")
-		logger.Log.Error(aResult.err)
-		return
-	}
-	aidata = aResult.aidata
-
-	reverseLocationNames := make(map[string]string)
-	for key, value := range aidata.LocationNames {
-		reverseLocationNames[value] = key
-	}
+	/*
+		reverseLocationNames := make(map[string]string)
+		for key, value := range aidata.LocationNames {
+			reverseLocationNames[value] = key
+		}
+	*/
 
 	// process nb1
 	/*
@@ -188,6 +182,7 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 	// 	logger.Log.Warnf("[%s] nb2 classify: %s", s.Family, cResult.err.Error())
 	// }
 
+	// get efficacy
 	d, err := database.Open(s.Family)
 	if err != nil {
 		return
@@ -195,6 +190,15 @@ func AnalyzeSensorData(s models.SensorData) (aidata models.LocationAnalysis, err
 	defer d.Close()
 	var algorithmEfficacy map[string]map[string]models.BinaryStats
 	d.Get("AlgorithmEfficacy", &algorithmEfficacy)
+
+	// get ai results
+	aResult := <-aChan
+	if aResult.err != nil || len(aResult.aidata.Predictions) == 0 {
+		err = errors.Wrap(aResult.err, "problem with machine learning")
+		logger.Log.Error(aResult.err)
+		return
+	}
+	aidata = aResult.aidata
 	aidata.Guesses = determineBestGuess(aidata, algorithmEfficacy)
 
 	if aidata.IsUnknown {
