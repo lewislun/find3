@@ -23,17 +23,11 @@ func init() {
 }
 
 // SaveSensorData will add sensor data to the database
-func SaveSensorData(s models.SensorData) (err error) {
+func SaveSensorData(s models.SensorData, db *database.Database) (err error) {
 	if err = s.Validate(); err != nil {
 		err = errors.Wrap(err, "problem validating data")
 		return
 	}
-
-	db, err := database.Open(s.Family)
-	if err != nil {
-		return
-	}
-	defer db.Close()
 
 	err = db.AddSensor(s)
 	if s.GPS.Longitude != 0 && s.GPS.Latitude != 0 {

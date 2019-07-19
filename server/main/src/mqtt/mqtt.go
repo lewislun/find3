@@ -219,8 +219,7 @@ func messageReceived(client MQTT.Client, msg MQTT.Message) {
 		jsonFingerprint.Location = ""
 	}
 	d := jsonFingerprint.Convert()
-	err = api.SaveSensorData(d)
-	if err != nil {
+	if err = api.SaveSensorData(d, db); err != nil {
 		logger.Log.Error(err)
 		return
 	}
