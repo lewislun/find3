@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/schollz/find3/server/main/src/database"
-	"github.com/schollz/find3/server/main/src/learning/nb1"
-	"github.com/schollz/find3/server/main/src/learning/nb2"
+	//"github.com/schollz/find3/server/main/src/learning/nb1"
+	//"github.com/schollz/find3/server/main/src/learning/nb2"
 	"github.com/schollz/find3/server/main/src/models"
 	"github.com/schollz/find3/server/main/src/utils"
 )
@@ -32,23 +32,23 @@ func Calibrate(family string, db *database.Database, crossValidation ...bool) (e
 	if err != nil {
 		return
 	}
+	/*
+		// do the Golang naive bayes fitting
+		nb := nb1.New()
+		logger.Log.Debugf("naive bayes1 fitting")
+		errFit := nb.Fit(datasLearn)
+		if errFit != nil {
+			logger.Log.Error(errFit)
+		}
 
-	// do the Golang naive bayes fitting
-	nb := nb1.New()
-	logger.Log.Debugf("naive bayes1 fitting")
-	errFit := nb.Fit(datasLearn)
-	if errFit != nil {
-		logger.Log.Error(errFit)
-	}
-
-	// do the Golang naive bayes2 fitting
-	nbFit2 := nb2.New()
-	logger.Log.Debugf("naive bayes2 fitting")
-	errFit = nbFit2.Fit(datasLearn)
-	if errFit != nil {
-		logger.Log.Error(errFit)
-	}
-
+		// do the Golang naive bayes2 fitting
+		nbFit2 := nb2.New()
+		logger.Log.Debugf("naive bayes2 fitting")
+		errFit = nbFit2.Fit(datasLearn)
+		if errFit != nil {
+			logger.Log.Error(errFit)
+		}
+	*/
 	// do the python learning
 	err = learnFromData(family, datasLearn)
 	if err != nil {
@@ -366,7 +366,7 @@ func findBestAlgorithm(datas []models.SensorData, db *database.Database) (algori
 	}
 
 	// generate location analysis images
-	go GenerateImages(datas[0].Family)
+	//go GenerateImages(datas[0].Family)
 
 	// insert wardriving GPS
 	locations, _ := db.GetLocations()

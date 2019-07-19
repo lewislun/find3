@@ -3,9 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +15,6 @@ import (
 	"github.com/schollz/find3/server/main/src/database"
 	"github.com/schollz/find3/server/main/src/models"
 	"github.com/schollz/find3/server/main/src/mqtt"
-	"github.com/schollz/utils"
 )
 
 // Port defines the public port
@@ -48,511 +45,284 @@ func Run() (err error) {
 		logger.Log.Debug("setup mqtt")
 	}
 
-	logger.Log.Debug("current families: ", database.GetFamilies())
-
 	// setup gin server
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	// Standardize logs
-	r.LoadHTMLGlob("templates/*")
-	r.Static("/static", "./static")
 	r.Use(middleWareHandler(), gin.Recovery(), gzip.Gzip(gzip.DefaultCompression))
-	// r.Use(middleWareHandler(), gin.Recovery())
-	r.HEAD("/", func(c *gin.Context) { // handler for the uptime robot
-		c.String(http.StatusOK, "OK")
-	})
-	r.GET("/", func(c *gin.Context) { // handler for the uptime robot
-		c.HTML(http.StatusOK, "login.tmpl", gin.H{
-			"Message": "",
+	// dashboard (disabled)
+	/*
+		r.LoadHTMLGlob("templates/*")
+		r.Static("/static", "./static")
+		r.HEAD("/", func(c *gin.Context) { // handler for the uptime robot
+			c.String(http.StatusOK, "OK")
 		})
-	})
-	r.POST("/", func(c *gin.Context) {
-		family := strings.ToLower(c.PostForm("inputFamily"))
-		c.Redirect(http.StatusMovedPermanently, "/view/dashboard/"+family)
-
-		//c.HTML(http.StatusOK, "login.tmpl", gin.H{
-		//	"Message": template.HTML(fmt.Sprintf(`Family '%s' does not exist. Follow <a href="https://www.internalpositioning.com/doc/tracking_your_phone.md" target="_blank">these instructions</a> to get started.`, family)),
-		//})
-	})
-	r.DELETE("/api/v1/database/:family", func(c *gin.Context) {
-		c.JSON(200, gin.H{"success": false, "message": "not implemented"})
-	})
-	r.DELETE("/api/v1/location/:family/:location", func(c *gin.Context) {
-		family := strings.ToLower(c.Param("family"))
-		err = db.DeleteLocation(c.Param("location"))
-		if err == nil {
-			c.JSON(200, gin.H{"success": true, "message": "deleted location '" + c.Param("location") + "' for " + family})
-			return
-		}
-		c.JSON(200, gin.H{"success": false, "message": err.Error()})
-	})
-	r.GET("/view/analysis/:family", func(c *gin.Context) {
-		family := strings.ToLower(c.Param("family"))
-		locationList, err := db.GetLocations()
-		if err != nil {
-			logger.Log.Warn("could not get locations")
-			c.String(200, err.Error())
-			return
-		}
-		c.HTML(http.StatusOK, "analysis.tmpl", gin.H{
-			"LocationAnalysis": true,
-			"Family":           family,
-			"Locations":        locationList,
-			"FamilyJS":         template.JS(family),
+		r.GET("/", func(c *gin.Context) { // handler for the uptime robot
+			c.HTML(http.StatusOK, "login.tmpl", gin.H{
+				"Message": "",
+			})
 		})
-	})
-	r.GET("/view/location_analysis/:family/:location", func(c *gin.Context) {
-		family := strings.ToLower(c.Param("family"))
-		img, err := api.GetImage(family, c.Param("location"))
-		if err != nil {
-			c.String(http.StatusBadRequest, fmt.Sprintf("unable to locate image for '%s' for '%s'", c.Param("location"), family))
-		} else {
-			c.Data(200, "image/png", img)
-		}
-	})
-	r.GET("/view/location/:family/:device", func(c *gin.Context) {
-		family := strings.ToLower(c.Param("family"))
-		device := c.Param("device")
-		c.HTML(http.StatusOK, "location.tmpl", gin.H{
-			"Family":   family,
-			"Device":   device,
-			"FamilyJS": template.JS(family),
-			"DeviceJS": template.JS(device),
+		r.POST("/", func(c *gin.Context) {
+			family := strings.ToLower(c.PostForm("inputFamily"))
+			c.Redirect(http.StatusMovedPermanently, "/view/dashboard/"+family)
+
+			//c.HTML(http.StatusOK, "login.tmpl", gin.H{
+			//	"Message": template.HTML(fmt.Sprintf(`Family '%s' does not exist. Follow <a href="https://www.internalpositioning.com/doc/tracking_your_phone.md" target="_blank">these instructions</a> to get started.`, family)),
+			//})
 		})
-	})
-	r.GET("/view/map2/:family", func(c *gin.Context) {
-		family := strings.ToLower(c.Param("family"))
-
-		err := func(family string) (err error) {
-			gpsData, err := api.GetGPSData(family)
-			if err != nil {
-				return
-			}
-
-			// initialize GPS data
-			type gpsdata struct {
-				Hash      template.JS
-				Location  template.JS
-				Latitude  template.JS
-				Longitude template.JS
-			}
-			data := make([]gpsdata, len(gpsData))
-			avgLat := 0.0
-			avgLon := 0.0
-			i := 0
-			for loc := range gpsData {
-				data[i].Hash = template.JS(utils.Md5Sum(loc))
-				data[i].Location = template.JS(loc)
-				latitude := 0.0
-				longitude := 0.0
-				if _, ok := gpsData[loc]; ok {
-					latitude = gpsData[loc].GPS.Latitude
-					longitude = gpsData[loc].GPS.Longitude
-				}
-				avgLat += latitude
-				avgLon += longitude
-				data[i].Latitude = template.JS(fmt.Sprintf("%2.10f", latitude))
-				data[i].Longitude = template.JS(fmt.Sprintf("%2.10f", longitude))
-				i++
-			}
-			avgLat = avgLat / float64(len(gpsData))
-			avgLon = avgLon / float64(len(gpsData))
-
-			c.HTML(200, "map2.tmpl", gin.H{
-				"UserMap":  true,
-				"Family":   family,
-				"Device":   "all",
-				"FamilyJS": template.JS(family),
-				"DeviceJS": template.JS("all"),
-				"Data":     data,
-				"Center":   template.JS(fmt.Sprintf("%2.5f,%2.5f", avgLat, avgLon)),
-			})
-			return
-		}(family)
-		if err != nil {
-			logger.Log.Warn(err)
-			c.HTML(200, "map2.tmpl", gin.H{
-				"UserMap":      true,
-				"ErrorMessage": err.Error(),
-				"Family":       family,
-				"Device":       "all",
-				"FamilyJS":     template.JS(family),
-				"DeviceJS":     template.JS("all"),
-			})
-		}
-	})
-	r.GET("/view/map/:family", func(c *gin.Context) {
-		family := strings.ToLower(c.Param("family"))
-		err := func(family string) (err error) {
-			gpsData, err := api.GetGPSData(family)
-			if err != nil {
-				return
-			}
-
-			// initialize GPS data
-			type gpsdata struct {
-				Hash      template.JS
-				Location  template.JS
-				Latitude  template.JS
-				Longitude template.JS
-			}
-			data := make([]gpsdata, len(gpsData))
-			avgLat := 0.0
-			avgLon := 0.0
-			i := 0
-			for loc := range gpsData {
-				data[i].Hash = template.JS(utils.Md5Sum(loc))
-				data[i].Location = template.JS(loc)
-				latitude := 0.0
-				longitude := 0.0
-				if _, ok := gpsData[loc]; ok {
-					latitude = gpsData[loc].GPS.Latitude
-					longitude = gpsData[loc].GPS.Longitude
-				}
-				avgLat += latitude
-				avgLon += longitude
-				data[i].Latitude = template.JS(fmt.Sprintf("%2.10f", latitude))
-				data[i].Longitude = template.JS(fmt.Sprintf("%2.10f", longitude))
-				i++
-			}
-			avgLat = avgLat / float64(len(gpsData))
-			avgLon = avgLon / float64(len(gpsData))
-
-			c.HTML(200, "map.tmpl", gin.H{
-				"Map":    true,
-				"Family": family,
-				"Data":   data,
-				"Center": template.JS(fmt.Sprintf("%2.5f,%2.5f", avgLat, avgLon)),
-			})
-			return
-		}(family)
-		if err != nil {
-			logger.Log.Warn(err)
-			c.HTML(200, "map.tmpl", gin.H{
-				"Map":          true,
-				"ErrorMessage": err.Error(),
-				"Family":       family,
-			})
-		}
-	})
-	r.GET("/api/v1/database/:family", func(c *gin.Context) {
-		var dumped string
-		dumped, err = db.Dump()
-		if err == nil {
-			c.String(200, dumped)
-			return
-		}
-		c.JSON(200, gin.H{"success": false, "message": err.Error()})
-	})
-	r.GET("/api/v1/data/:family", func(c *gin.Context) {
-		var sensors []models.SensorData
-		var message string
-		sensors, err = db.GetAllForClassification()
-		if err != nil {
-			message = err.Error()
-		} else {
-			message = fmt.Sprintf("got %d data", len(sensors))
-		}
-		c.JSON(200, gin.H{"success": err == nil, "message": message, "data": sensors})
-	})
-	r.GET("/view/gps/:family", func(c *gin.Context) {
-		err := func(family string) (err error) {
-			logger.Log.Debugf("[%s] getting gps", family)
-			gpsData, err := api.GetGPSData(family)
-			if err != nil {
-				return
-			}
-
-			// initialize GPS data
-			type gpsdata struct {
-				Hash      template.JS
-				Location  template.JS
-				Latitude  template.JS
-				Longitude template.JS
-			}
-			data := make([]gpsdata, len(gpsData))
-			avgLat := 0.0
-			avgLon := 0.0
-			i := 0
-			for loc := range gpsData {
-				data[i].Hash = template.JS(utils.Md5Sum(loc))
-				data[i].Location = template.JS(loc)
-				latitude := 0.0
-				longitude := 0.0
-				if _, ok := gpsData[loc]; ok {
-					latitude = gpsData[loc].GPS.Latitude
-					longitude = gpsData[loc].GPS.Longitude
-				}
-				avgLat += latitude
-				avgLon += longitude
-				data[i].Latitude = template.JS(fmt.Sprintf("%2.10f", latitude))
-				data[i].Longitude = template.JS(fmt.Sprintf("%2.10f", longitude))
-				i++
-			}
-			avgLat = avgLat / float64(len(gpsData))
-			avgLon = avgLon / float64(len(gpsData))
-
-			c.HTML(200, "gps.tmpl", gin.H{
-				"Family": family,
-				"Data":   data,
-				"Center": template.JS(fmt.Sprintf("%2.5f,%2.5f", avgLat, avgLon)),
-			})
-			return
-		}(strings.ToLower(c.Param("family")))
-		if err != nil {
-			c.String(403, err.Error())
-		}
-	})
-	r.GET("/view/dashboard/:family", func(c *gin.Context) {
-		type LocEff struct {
-			Name           string
-			Total          int64
-			PercentCorrect int64
-		}
-		type Efficacy struct {
-			AccuracyBreakdown   []LocEff
-			LastCalibrationTime time.Time
-			TotalCount          int64
-			PercentCorrect      int64
-		}
-		type DeviceTable struct {
-			ID           string
-			Name         string
-			LastLocation string
-			LastSeen     time.Time
-			Probability  int64
-			ActiveTime   int64
-		}
-
-		family := strings.ToLower(c.Param("family"))
-		err := func(family string) (err error) {
-			startTime := time.Now()
-			var errorMessage string
-			var efficacy Efficacy
-
-			minutesAgoInt := 60
-			millisecondsAgo := int64(minutesAgoInt * 60 * 1000)
-			sensors, err := db.GetSensorFromGreaterTime(millisecondsAgo)
-			logger.Log.Debugf("[%s] got sensor from greater time %s", family, time.Since(startTime))
-			devicesToCheckMap := make(map[string]struct{})
-			for _, sensor := range sensors {
-				devicesToCheckMap[sensor.Device] = struct{}{}
-			}
-			// get list of devices I care about
-			devicesToCheck := make([]string, len(devicesToCheckMap))
-			i := 0
-			for device := range devicesToCheckMap {
-				devicesToCheck[i] = device
-				i++
-			}
-			logger.Log.Debugf("[%s] found %d devices to check", family, len(devicesToCheck))
-
-			logger.Log.Debugf("[%s] getting device counts", family)
-			deviceCounts, err := db.GetDeviceCountsFromDevices(devicesToCheck)
-			if err != nil {
-				err = errors.Wrap(err, "could not get devices")
-				return
-			}
-
-			deviceList := make([]string, len(deviceCounts))
-			i = 0
-			for device := range deviceCounts {
-				if deviceCounts[device] > 2 {
-					deviceList[i] = device
-					i++
-				}
-			}
-			deviceList = deviceList[:i]
-			jsonDeviceList, _ := json.Marshal(deviceList)
-			logger.Log.Debugf("found %d devices", len(deviceList))
-
-			logger.Log.Debugf("[%s] getting locations", family)
+		r.GET("/view/analysis/:family", func(c *gin.Context) {
+			family := strings.ToLower(c.Param("family"))
 			locationList, err := db.GetLocations()
 			if err != nil {
 				logger.Log.Warn("could not get locations")
+				c.String(200, err.Error())
+				return
 			}
-			jsonLocationList, _ := json.Marshal(locationList)
-			logger.Log.Debugf("found %d locations", len(locationList))
-
-			logger.Log.Debugf("[%s] total learned count", family)
-			efficacy.TotalCount, err = db.TotalLearnedCount()
+			c.HTML(http.StatusOK, "analysis.tmpl", gin.H{
+				"LocationAnalysis": true,
+				"Family":           family,
+				"Locations":        locationList,
+				"FamilyJS":         template.JS(family),
+			})
+		})
+		r.GET("/view/location_analysis/:family/:location", func(c *gin.Context) {
+			family := strings.ToLower(c.Param("family"))
+			img, err := api.GetImage(family, c.Param("location"))
 			if err != nil {
-				logger.Log.Warn("could not get TotalLearnedCount")
+				c.String(http.StatusBadRequest, fmt.Sprintf("unable to locate image for '%s' for '%s'", c.Param("location"), family))
+			} else {
+				c.Data(200, "image/png", img)
+			}
+		})
+		r.GET("/view/dashboard/:family", func(c *gin.Context) {
+			type LocEff struct {
+				Name           string
+				Total          int64
+				PercentCorrect int64
+			}
+			type Efficacy struct {
+				AccuracyBreakdown   []LocEff
+				LastCalibrationTime time.Time
+				TotalCount          int64
+				PercentCorrect      int64
+			}
+			type DeviceTable struct {
+				ID           string
+				Name         string
+				LastLocation string
+				LastSeen     time.Time
+				Probability  int64
+				ActiveTime   int64
 			}
 
-			var percentFloat64 float64
-			var confusionMetrics map[string]map[string]models.BinaryStats
-			var accuracyBreakdown map[string]float64
+			family := strings.ToLower(c.Param("family"))
+			err := func(family string) (err error) {
+				startTime := time.Now()
+				var errorMessage string
+				var efficacy Efficacy
 
-			keyValues := make(map[string]interface{})
-			keyValues["PercentCorrect"] = &percentFloat64
-			keyValues["LastCalibrationTime"] = &efficacy.LastCalibrationTime
-			keyValues["AccuracyBreakdown"] = &accuracyBreakdown
-			keyValues["AlgorithmEfficacy"] = &confusionMetrics
-			if err := db.GetMany(keyValues); err != nil {
-				err = errors.Wrap(err, "could not get info")
-			}
-			efficacy.PercentCorrect = int64(100 * percentFloat64)
-
-			logger.Log.Debugf("[%s] getting location count", family)
-			locationCounts, err := db.GetLocationCounts()
-			if err != nil {
-				logger.Log.Warn("could not get location counts")
-			}
-			logger.Log.Debugf("[%s] locations: %+v", family, locationCounts)
-
-			efficacy.AccuracyBreakdown = make([]LocEff, len(accuracyBreakdown))
-			i = 0
-			for key := range accuracyBreakdown {
-				l := LocEff{Name: strings.Title(key)}
-				l.PercentCorrect = int64(100 * accuracyBreakdown[key])
-				l.Total = int64(locationCounts[key])
-				efficacy.AccuracyBreakdown[i] = l
-				i++
-			}
-			var rollingData models.ReverseRollingData
-			errRolling := db.Get("ReverseRollingData", &rollingData)
-			passiveTable := []DeviceTable{}
-			scannerList := []string{}
-			if errRolling == nil {
-				passiveTable = make([]DeviceTable, len(rollingData.DeviceLocation))
+				minutesAgoInt := 60
+				millisecondsAgo := int64(minutesAgoInt * 60 * 1000)
+				sensors, err := db.GetSensorFromGreaterTime(millisecondsAgo)
+				logger.Log.Debugf("[%s] got sensor from greater time %s", family, time.Since(startTime))
+				devicesToCheckMap := make(map[string]struct{})
+				for _, sensor := range sensors {
+					devicesToCheckMap[sensor.Device] = struct{}{}
+				}
+				// get list of devices I care about
+				devicesToCheck := make([]string, len(devicesToCheckMap))
 				i := 0
-				for device := range rollingData.DeviceLocation {
-					s, errOpen := db.GetLatest(device)
-					if errOpen != nil {
-						continue
-					}
-					passiveTable[i].Name = device
-					passiveTable[i].LastLocation = rollingData.DeviceLocation[device]
-					passiveTable[i].LastSeen = time.Unix(0, s.Timestamp*1000000).UTC()
+				for device := range devicesToCheckMap {
+					devicesToCheck[i] = device
 					i++
 				}
-				sensors, errGet := db.GetSensorFromGreaterTime(60000 * 15)
-				if errGet == nil {
-					allScanners := make(map[string]struct{})
-					for _, s := range sensors {
-						for sensorType := range s.Sensors {
-							for scanner := range s.Sensors[sensorType] {
-								allScanners[scanner] = struct{}{}
-							}
-						}
-					}
-					scannerList = make([]string, len(allScanners))
-					i = 0
-					for scanner := range allScanners {
-						scannerList[i] = scanner
+				logger.Log.Debugf("[%s] found %d devices to check", family, len(devicesToCheck))
+
+				logger.Log.Debugf("[%s] getting device counts", family)
+				deviceCounts, err := db.GetDeviceCountsFromDevices(devicesToCheck)
+				if err != nil {
+					err = errors.Wrap(err, "could not get devices")
+					return
+				}
+
+				deviceList := make([]string, len(deviceCounts))
+				i = 0
+				for device := range deviceCounts {
+					if deviceCounts[device] > 2 {
+						deviceList[i] = device
 						i++
 					}
 				}
-			}
+				deviceList = deviceList[:i]
+				jsonDeviceList, _ := json.Marshal(deviceList)
+				logger.Log.Debugf("found %d devices", len(deviceList))
 
-			logger.Log.Debugf("[%s] getting by_locations for %d devices", family, len(deviceCounts))
-			// logger.Log.Debug(deviceCounts)
-			byLocations, err := api.GetByLocation(family, 15, false, 3, 0, 0, deviceCounts, db)
+				logger.Log.Debugf("[%s] getting locations", family)
+				locationList, err := db.GetLocations()
+				if err != nil {
+					logger.Log.Warn("could not get locations")
+				}
+				jsonLocationList, _ := json.Marshal(locationList)
+				logger.Log.Debugf("found %d locations", len(locationList))
+
+				logger.Log.Debugf("[%s] total learned count", family)
+				efficacy.TotalCount, err = db.TotalLearnedCount()
+				if err != nil {
+					logger.Log.Warn("could not get TotalLearnedCount")
+				}
+
+				var percentFloat64 float64
+				var confusionMetrics map[string]map[string]models.BinaryStats
+				var accuracyBreakdown map[string]float64
+
+				keyValues := make(map[string]interface{})
+				keyValues["PercentCorrect"] = &percentFloat64
+				keyValues["LastCalibrationTime"] = &efficacy.LastCalibrationTime
+				keyValues["AccuracyBreakdown"] = &accuracyBreakdown
+				keyValues["AlgorithmEfficacy"] = &confusionMetrics
+				if err := db.GetMany(keyValues); err != nil {
+					err = errors.Wrap(err, "could not get info")
+				}
+				efficacy.PercentCorrect = int64(100 * percentFloat64)
+
+				logger.Log.Debugf("[%s] getting location count", family)
+				locationCounts, err := db.GetLocationCounts()
+				if err != nil {
+					logger.Log.Warn("could not get location counts")
+				}
+				logger.Log.Debugf("[%s] locations: %+v", family, locationCounts)
+
+				efficacy.AccuracyBreakdown = make([]LocEff, len(accuracyBreakdown))
+				i = 0
+				for key := range accuracyBreakdown {
+					l := LocEff{Name: strings.Title(key)}
+					l.PercentCorrect = int64(100 * accuracyBreakdown[key])
+					l.Total = int64(locationCounts[key])
+					efficacy.AccuracyBreakdown[i] = l
+					i++
+				}
+				var rollingData models.ReverseRollingData
+				errRolling := db.Get("ReverseRollingData", &rollingData)
+				passiveTable := []DeviceTable{}
+				scannerList := []string{}
+				if errRolling == nil {
+					passiveTable = make([]DeviceTable, len(rollingData.DeviceLocation))
+					i := 0
+					for device := range rollingData.DeviceLocation {
+						s, errOpen := db.GetLatest(device)
+						if errOpen != nil {
+							continue
+						}
+						passiveTable[i].Name = device
+						passiveTable[i].LastLocation = rollingData.DeviceLocation[device]
+						passiveTable[i].LastSeen = time.Unix(0, s.Timestamp*1000000).UTC()
+						i++
+					}
+					sensors, errGet := db.GetSensorFromGreaterTime(60000 * 15)
+					if errGet == nil {
+						allScanners := make(map[string]struct{})
+						for _, s := range sensors {
+							for sensorType := range s.Sensors {
+								for scanner := range s.Sensors[sensorType] {
+									allScanners[scanner] = struct{}{}
+								}
+							}
+						}
+						scannerList = make([]string, len(allScanners))
+						i = 0
+						for scanner := range allScanners {
+							scannerList[i] = scanner
+							i++
+						}
+					}
+				}
+
+				logger.Log.Debugf("[%s] getting by_locations for %d devices", family, len(deviceCounts))
+				// logger.Log.Debug(deviceCounts)
+				byLocations, err := api.GetByLocation(family, 15, false, 3, 0, 0, deviceCounts, db)
+				if err != nil {
+					logger.Log.Warn(err)
+				}
+
+				logger.Log.Debugf("[%s] creating device table", family)
+				table := []DeviceTable{}
+				for _, byLocation := range byLocations {
+					for _, device := range byLocation.Devices {
+						table = append(table, DeviceTable{
+							ID:           utils.Hash(device.Device),
+							Name:         device.Device,
+							LastLocation: byLocation.Location,
+							LastSeen:     device.Timestamp,
+							Probability:  int64(device.Probability * 100),
+							ActiveTime:   int64(device.ActiveMins),
+						})
+					}
+				}
+
+				if err != nil {
+					errorMessage = err.Error()
+				} else if percentFloat64 == 0 {
+					errorMessage = "No learning data available, see the documentation for how to get started with learning. "
+				}
+				if efficacy.LastCalibrationTime.IsZero() {
+					errorMessage += "You need to calibrate, press the calibration button."
+				}
+
+				c.HTML(http.StatusOK, "dashboard.tmpl", gin.H{
+					"Dashboard":      true,
+					"Family":         family,
+					"FamilyJS":       template.JS(family),
+					"Efficacy":       efficacy,
+					"Devices":        table,
+					"ErrorMessage":   errorMessage,
+					"PassiveDevices": passiveTable,
+					"DeviceList":     template.JS(jsonDeviceList),
+					"LocationList":   template.JS(jsonLocationList),
+					"Scanners":       scannerList,
+					"PercentCorrect": percentFloat64,
+					"UseMQTT":        UseMQTT,
+					"MQTTServer":     os.Getenv("MQTT_EXTERNAL"),
+					"MQTTPort":       os.Getenv("MQTT_PORT"),
+				})
+				err = nil
+				logger.Log.Debugf("[%s] rendered dashboard in %s", family, time.Since(startTime))
+				return
+			}(family)
 			if err != nil {
 				logger.Log.Warn(err)
+				c.HTML(http.StatusOK, "dashboard.tmpl", gin.H{
+					"Family":       family,
+					"FamilyJS":     template.JS(family),
+					"ErrorMessage": err.Error(),
+					"Efficacy":     Efficacy{},
+				})
 			}
-
-			logger.Log.Debugf("[%s] creating device table", family)
-			table := []DeviceTable{}
-			for _, byLocation := range byLocations {
-				for _, device := range byLocation.Devices {
-					table = append(table, DeviceTable{
-						ID:           utils.Hash(device.Device),
-						Name:         device.Device,
-						LastLocation: byLocation.Location,
-						LastSeen:     device.Timestamp,
-						Probability:  int64(device.Probability * 100),
-						ActiveTime:   int64(device.ActiveMins),
-					})
-				}
-			}
-
-			if err != nil {
-				errorMessage = err.Error()
-			} else if percentFloat64 == 0 {
-				errorMessage = "No learning data available, see the documentation for how to get started with learning. "
-			}
-			if efficacy.LastCalibrationTime.IsZero() {
-				errorMessage += "You need to calibrate, press the calibration button."
-			}
-
-			c.HTML(http.StatusOK, "dashboard.tmpl", gin.H{
-				"Dashboard":      true,
-				"Family":         family,
-				"FamilyJS":       template.JS(family),
-				"Efficacy":       efficacy,
-				"Devices":        table,
-				"ErrorMessage":   errorMessage,
-				"PassiveDevices": passiveTable,
-				"DeviceList":     template.JS(jsonDeviceList),
-				"LocationList":   template.JS(jsonLocationList),
-				"Scanners":       scannerList,
-				"PercentCorrect": percentFloat64,
-				"UseMQTT":        UseMQTT,
-				"MQTTServer":     os.Getenv("MQTT_EXTERNAL"),
-				"MQTTPort":       os.Getenv("MQTT_PORT"),
-			})
-			err = nil
-			logger.Log.Debugf("[%s] rendered dashboard in %s", family, time.Since(startTime))
-			return
-		}(family)
-		if err != nil {
-			logger.Log.Warn(err)
-			c.HTML(http.StatusOK, "dashboard.tmpl", gin.H{
-				"Family":       family,
-				"FamilyJS":     template.JS(family),
-				"ErrorMessage": err.Error(),
-				"Efficacy":     Efficacy{},
-			})
+		})
+	*/
+	//r.OPTIONS("/api/v1/settings/passive", func(c *gin.Context) { c.String(200, "OK") })
+	//r.POST("/api/v1/settings/passive", handlerReverseSettings)
+	//r.GET("/ws", wshandler) // handler for the web sockets (see websockets.go)
+	/*
+		if UseMQTT {
+			r.GET("/api/v1/mqtt/:family", handlerMQTT) // handler for setting MQTT
 		}
-	})
-	r.OPTIONS("/api/v1/devices/*family", func(c *gin.Context) { c.String(200, "OK") })
-	r.GET("/api/v1/devices/*family", handlerApiV1Devices)
-	r.OPTIONS("/api/v1/location/:family/*device", func(c *gin.Context) { c.String(200, "OK") })
-	r.GET("/api/v1/location/:family/*device", handlerApiV1Location)
-	r.OPTIONS("/api/v1/locations/:family", func(c *gin.Context) { c.String(200, "OK") })
-	r.GET("/api/v1/locations/:family", handlerApiV1Locations)
-	r.OPTIONS("/api/v1/location_basic/:family/*device", func(c *gin.Context) { c.String(200, "OK") })
-	r.GET("/api/v1/location_basic/:family/*device", handlerApiV1LocationSimple)
-	r.OPTIONS("/api/v1/by_location/:family", func(c *gin.Context) { c.String(200, "OK") })
-	r.GET("/api/v1/by_location/:family", handlerApiV1ByLocation)
-	r.OPTIONS("/api/v1/calibrate/*family", func(c *gin.Context) { c.String(200, "OK") })
-	r.GET("/api/v1/calibrate/*family", handlerApiV1Calibrate)
-	r.OPTIONS("/api/v1/settings/passive", func(c *gin.Context) { c.String(200, "OK") })
-	r.POST("/api/v1/settings/passive", handlerReverseSettings)
-	r.OPTIONS("/api/v1/efficacy/:family", func(c *gin.Context) { c.String(200, "OK") })
-	r.GET("/api/v1/efficacy/:family", handlerEfficacy)
-	r.GET("/ping", ping)
+	*/
+	//r.POST("/classify", handlerDataClassify) // classify a fingerprint
+	//r.POST("/passive", handlerReverse)       // typical data handler
+	r.OPTIONS("/calibrate", func(c *gin.Context) { c.String(200, "OK") })
+	r.GET("/calibrate", handlerCalibrate)
+	r.OPTIONS("/efficacy", func(c *gin.Context) { c.String(200, "OK") })
+	r.GET("/efficacy", handlerEfficacy)
 	r.GET("/now", handlerNow)
-	r.GET("/test", handleTest)
-	r.GET("/ws", wshandler) // handler for the web sockets (see websockets.go)
-	if UseMQTT {
-		r.GET("/api/v1/mqtt/:family", handlerMQTT) // handler for setting MQTT
-	}
-	r.POST("/api/v1/gps", handlerGPS)        // typical data handler
-	r.POST("/data", handlerData)             // typical data handler
-	r.POST("/classify", handlerDataClassify) // classify a fingerprint
-	r.POST("/passive", handlerReverse)       // typical data handler
 	r.POST("/locate", handlerLocate)
-	//r.POST("/learn", handlerFIND)            // backwards-compatible with FIND for learning
-	//r.POST("/track", handlerFIND)            // backwards-compatible with FIND for tracking
+	r.POST("/learn", handlerLearn)
 	logger.Log.Infof("Running on 0.0.0.0:%s", Port)
 
-	err = r.Run(":" + Port) // listen and serve on 0.0.0.0:8080
+	err = r.Run(":" + Port) // listen and serve
 	return
 }
 
 func replace(input, from, to string) string {
 	return strings.Replace(input, from, to, -1)
-}
-
-func ping(c *gin.Context) {
-	c.String(http.StatusOK, "pong")
-}
-
-func handleTest(c *gin.Context) {
-	c.String(http.StatusOK, "ok")
 }
 
 func handlerLocate(c *gin.Context) {
@@ -582,68 +352,6 @@ func handlerLocate(c *gin.Context) {
 	}
 }
 
-func handlerApiV1Devices(c *gin.Context) {
-	err := func(c *gin.Context) (err error) {
-		//family := strings.ToLower(strings.TrimSpace(c.Param("family")[1:]))
-		s, err := db.GetDevices()
-		if err != nil {
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"message": "got devices", "success": true, "devices": s})
-		return
-	}(c)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": false})
-	}
-}
-
-func handlerApiV1Locations(c *gin.Context) {
-	type Location struct {
-		Device     string                    `json:"device"`
-		Sensors    models.SensorData         `json:"sensors"`
-		Prediction models.LocationPrediction `json:"prediction"`
-	}
-
-	locations, err := func(c *gin.Context) (locations []Location, err error) {
-		family := strings.ToLower(strings.TrimSpace(c.Param("family")))
-
-		devices, err := db.GetDevices()
-		if err != nil {
-			return
-		}
-		locations = make([]Location, len(devices))
-		logger.Log.Debugf("[%s] getting information for %d devices", family, len(devices))
-		for i, device := range devices {
-			logger.Log.Debugf("[%s] getting prediction for %s", family, device)
-			locations[i] = Location{Device: device}
-			locations[i].Sensors, err = db.GetLatest(device)
-			if err != nil {
-				continue
-			}
-			predictions, err := db.GetPrediction(locations[i].Sensors.Timestamp)
-			if err == nil && len(predictions) > 0 {
-				locations[i].Prediction = predictions[0]
-			} else {
-				analysis, err := api.AnalyzeSensorData(locations[i].Sensors, db)
-				if err != nil {
-					continue
-				}
-				if len(analysis.Guesses) > 0 {
-					locations[i].Prediction = analysis.Guesses[0]
-				}
-			}
-		}
-
-		return
-	}(c)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": err == nil})
-	} else {
-
-		c.JSON(http.StatusOK, gin.H{"message": "got locations", "success": err == nil, "locations": locations})
-	}
-}
-
 func handlerEfficacy(c *gin.Context) {
 	type Efficacy struct {
 		AccuracyBreakdown   map[string]float64                       `json:"accuracy_breakdown"`
@@ -652,7 +360,6 @@ func handlerEfficacy(c *gin.Context) {
 	}
 
 	efficacy, err := func(c *gin.Context) (efficacy Efficacy, err error) {
-
 		keyValues := make(map[string]interface{})
 		keyValues["LastCalibrationTime"] = &efficacy.LastCalibrationTime
 		keyValues["AccuracyBreakdown"] = &efficacy.AccuracyBreakdown
@@ -660,7 +367,6 @@ func handlerEfficacy(c *gin.Context) {
 		if err := db.GetMany(keyValues); err != nil {
 			err = errors.Wrap(err, "could not get efficacy info")
 		}
-
 		return
 	}(c)
 	if err != nil {
@@ -703,82 +409,8 @@ func handlerApiV1ByLocation(c *gin.Context) {
 	}
 }
 
-func handlerApiV1Location(c *gin.Context) {
-	s, analysis, err := func(c *gin.Context) (s models.SensorData, analysis models.LocationAnalysis, err error) {
-		family := c.Param("family")
-		device := c.Param("device")[1:]
-
-		if s, err = db.GetLatest(device); err != nil {
-			return
-		}
-		if analysis, err = api.AnalyzeSensorData(s, db); err != nil {
-			if api.Calibrate(family, db, true); err != nil {
-				logger.Log.Warn(err)
-				return
-			}
-		}
-		return
-	}(c)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": err == nil})
-	} else {
-		c.JSON(http.StatusOK, gin.H{"message": "got location", "success": err == nil, "sensors": s, "analysis": analysis})
-	}
-}
-
-func handlerApiV1LocationSimple(c *gin.Context) {
-	s, analysis, err := func(c *gin.Context) (s models.SensorData, analysis models.LocationAnalysis, err error) {
-		family := strings.ToLower(strings.TrimSpace(c.Param("family")))
-		device := c.Param("device")[1:]
-
-		logger.Log.Debugf("[%s] getting location for %s", family, device)
-
-		if s, err = db.GetLatest(device); err != nil {
-			return
-		}
-		if analysis, err = api.AnalyzeSensorData(s, db); err != nil {
-			err = api.Calibrate(family, db, true)
-			if err != nil {
-				logger.Log.Warn(err)
-				return
-			}
-		}
-
-		gpsData, err := api.GetGPSData(family)
-		if _, ok := gpsData[analysis.Guesses[0].Location]; ok {
-			s.GPS = models.GPS{
-				Latitude:  gpsData[analysis.Guesses[0].Location].GPS.Latitude,
-				Longitude: gpsData[analysis.Guesses[0].Location].GPS.Longitude,
-			}
-		}
-		return
-	}(c)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": err == nil})
-	} else {
-		simpleLocation := struct {
-			Location        string     `json:"loc"`
-			GPS             models.GPS `json:"gps"`
-			Probability     float64    `json:"prob"`
-			LastSeenTimeAgo int64      `json:"seen"`
-		}{
-			Location:        analysis.Guesses[0].Location,
-			GPS:             s.GPS,
-			Probability:     analysis.Guesses[0].Probability,
-			LastSeenTimeAgo: time.Now().UTC().UnixNano()/int64(time.Second) - (s.Timestamp / 1000),
-		}
-		c.JSON(http.StatusOK, gin.H{"message": "ok", "success": err == nil, "data": simpleLocation})
-	}
-}
-
-func handlerApiV1Calibrate(c *gin.Context) {
-	family := strings.ToLower(strings.TrimSpace(c.Param("family")[1:]))
-	var err error
-	if family == "" {
-		err = errors.New("invalid family")
-	} else {
-		err = api.Calibrate(family, db, true)
-	}
+func handlerCalibrate(c *gin.Context) {
+	err := api.Calibrate("default", db, true)
 	message := "calibrated data"
 	if err != nil {
 		message = err.Error()
@@ -832,9 +464,9 @@ func handlerNow(c *gin.Context) {
 	c.String(200, strconv.Itoa(int(time.Now().UTC().UnixNano()/int64(time.Millisecond))))
 }
 
-func handlerData(c *gin.Context) {
+func handlerLearn(c *gin.Context) {
 	message, err := func(c *gin.Context) (message string, err error) {
-		justSave := c.DefaultQuery("justsave", "0") == "1"
+		//justSave := c.DefaultQuery("justsave", "0") == "1"
 		var s models.SensorData
 		if err = c.BindJSON(&s); err != nil {
 			message = s.Family
@@ -843,7 +475,7 @@ func handlerData(c *gin.Context) {
 		}
 
 		// process data
-		if err = processSensorData(s, justSave); err != nil {
+		if err = processSensorData(s, true); err != nil {
 			message = s.Family
 			return
 		}
@@ -851,48 +483,6 @@ func handlerData(c *gin.Context) {
 		// success
 		message = "inserted data"
 		logger.Log.Debugf("[%s] /data %+v", s.Family, s)
-		return
-	}(c)
-
-	if err != nil {
-		logger.Log.Debugf("[%s] problem parsing: %s", message, err.Error())
-		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": false})
-	} else {
-		c.JSON(http.StatusOK, gin.H{"message": message, "success": true})
-	}
-}
-
-func handlerGPS(c *gin.Context) {
-	message, err := func(c *gin.Context) (message string, err error) {
-		var d models.SensorData
-		err = c.BindJSON(&d)
-		if err != nil {
-			message = d.Family
-			err = errors.Wrap(err, "problem binding data")
-			return
-		}
-
-		if d.Family == "" {
-			err = errors.New("need a family")
-			return
-		}
-		if d.Location == "" {
-			err = errors.New("need a location")
-			return
-		}
-		d.Location = strings.ToLower(d.Location)
-		d.Family = strings.ToLower(d.Family)
-
-		// insert data
-		var gpsData map[string]models.SensorData
-		errGet := db.Get("customGPS", &gpsData)
-		if errGet != nil {
-			gpsData = make(map[string]models.SensorData)
-		}
-		gpsData[d.Location] = d
-		logger.Log.Debugf("[%s] /api/v1/gps %+v", d.Family, d)
-		err = db.Set("customGPS", gpsData)
-		message = "updated " + d.Location
 		return
 	}(c)
 
@@ -1168,32 +758,8 @@ func parseRollingData(family string) (err error) {
 	return
 }
 
-func handlerFIND(c *gin.Context) {
-	var j models.FINDFingerprint
-	var err error
-	var message string
-	err = c.BindJSON(&j)
-	if err == nil {
-		if c.Request.URL.Path == "/track" {
-			j.Location = ""
-		}
-		d := j.Convert()
-		err2 := processSensorData(d)
-		if err2 == nil {
-			message = "inserted data"
-		} else {
-			err = err2
-		}
-	}
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": false})
-	} else {
-		c.JSON(http.StatusOK, gin.H{"message": message, "success": true})
-	}
-}
-
 func processSensorData(p models.SensorData, justSave ...bool) (err error) {
-	if err = api.SaveSensorData(p); err != nil {
+	if err = api.SaveSensorData(p, db); err != nil {
 		return
 	}
 

@@ -114,4 +114,4 @@ def ping():
     return jsonify({'message': 'pong'})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", threaded=True, port=8002)
+    app.run(host="0.0.0.0", threaded=True)
