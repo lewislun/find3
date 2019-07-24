@@ -400,9 +400,7 @@ func GetByLocation(family string, minutesAgoInt int, showRandomized bool, active
 
 	byLocations = make([]models.ByLocation, len(locations))
 	i = 0
-	gpsData, _ := GetGPSData(family)
 	for location := range locations {
-		byLocations[i].GPS = gpsData[location].GPS
 		byLocations[i].Location = location
 		byLocations[i].Devices = locations[location]
 		byLocations[i].Total = len(locations[location])

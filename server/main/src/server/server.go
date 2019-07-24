@@ -69,21 +69,6 @@ func Run(debugMode bool) (err error) {
 			//	"Message": template.HTML(fmt.Sprintf(`Family '%s' does not exist. Follow <a href="https://www.internalpositioning.com/doc/tracking_your_phone.md" target="_blank">these instructions</a> to get started.`, family)),
 			//})
 		})
-		r.GET("/view/analysis/:family", func(c *gin.Context) {
-			family := strings.ToLower(c.Param("family"))
-			locationList, err := db.GetLocations()
-			if err != nil {
-				logger.Log.Warn("could not get locations")
-				c.String(200, err.Error())
-				return
-			}
-			c.HTML(http.StatusOK, "analysis.tmpl", gin.H{
-				"LocationAnalysis": true,
-				"Family":           family,
-				"Locations":        locationList,
-				"FamilyJS":         template.JS(family),
-			})
-		})
 		r.GET("/view/location_analysis/:family/:location", func(c *gin.Context) {
 			family := strings.ToLower(c.Param("family"))
 			img, err := api.GetImage(family, c.Param("location"))
@@ -157,7 +142,7 @@ func Run(debugMode bool) (err error) {
 				logger.Log.Debugf("found %d devices", len(deviceList))
 
 				logger.Log.Debugf("[%s] getting locations", family)
-				locationList, err := db.GetLocations()
+				//locationList, err := db.GetLocations()
 				if err != nil {
 					logger.Log.Warn("could not get locations")
 				}
@@ -712,17 +697,6 @@ func sendOutData(p models.SensorData) (analysis models.LocationAnalysis, err err
 		Guesses  []models.LocationPrediction `json:"guesses"`
 		Location string                      `json:"location"` // FIND backwards-compatability
 		Time     int64                       `json:"time"`     // FIND backwards-compatability
-	}
-
-	// determine GPS coordinates
-	gpsData, err := api.GetGPSData(p.Family)
-	_, hasLoc := gpsData[analysis.Guesses[0].Location]
-	if err == nil && hasLoc {
-		p.GPS.Latitude = gpsData[analysis.Guesses[0].Location].GPS.Latitude
-		p.GPS.Longitude = gpsData[analysis.Guesses[0].Location].GPS.Longitude
-	} else {
-		p.GPS.Latitude = -1
-		p.GPS.Longitude = -1
 	}
 
 	payload := Payload{

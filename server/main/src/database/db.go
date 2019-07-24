@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"os"
-	"path"
 	"strings"
 	"time"
 
@@ -385,20 +383,6 @@ func (d *Database) GetSensorFromGreaterTime(timeBlockInMilliseconds int64) (sens
 	return
 }
 
-func (d *Database) NumDevices() (num int, err error) {
-	stmt, err := d.db.Prepare("select count(id) from devices")
-	if err != nil {
-		err = errors.Wrap(err, "problem preparing SQL")
-		return
-	}
-	defer stmt.Close()
-	err = stmt.QueryRow().Scan(&num)
-	if err != nil {
-		err = errors.Wrap(err, "problem getting key")
-	}
-	return
-}
-
 func (d *Database) GetDeviceFirstTimeFromDevices(devices []string) (firstTime map[string]time.Time, err error) {
 	firstTime = make(map[string]time.Time)
 	query := fmt.Sprintf("select d.name as n, max(s.timestamp) as t from sensors as s where devices.name IN ('%s') left join devices as d on s.deviceid = d.id group by d.id", strings.Join(devices, "','"))
@@ -571,11 +555,6 @@ func (d *Database) GetLocationCounts() (counts map[string]int, err error) {
 	return
 }
 
-// GetAnalysisFromGreaterTime will return the analysis for a given timeframe
-// func (d *Database) GetAnalysisFromGreaterTime(timestamp interface{}) {
-// 	select sensors.timestamp, devices.name, location_predictions.prediction from sensors inner join location_predictions on location_predictions.timestamp=sensors.timestamp inner join devices on sensors.deviceid=devices.id WHERE sensors.timestamp > 0 GROUP BY devices.name ORDER BY sensors.timestamp DESC;
-// }
-
 // GetAllForClassification will return a sensor data for classifying
 func (d *Database) GetAllForClassification() (s []models.SensorData, err error) {
 	return d.GetAllFromQuery("SELECT timestamp, deviceid, locationid, bluetooth FROM sensors WHERE sensors.locationid !='' ORDER BY timestamp")
@@ -661,39 +640,6 @@ func (d *Database) GetDevices() (devices []string, err error) {
 	err = rows.Err()
 	if err != nil {
 		err = errors.Wrap(err, fmt.Sprintf("problem scanning rows, only got %d devices", len(devices)))
-	}
-	return
-}
-
-func (d *Database) GetLocations() (locations []string, err error) {
-	// get only the active locations
-	query := "SELECT locations.name FROM sensors INNER JOIN locations ON sensors.locationid=locations.id GROUP BY locations.name"
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query()
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
-
-	locations = []string{}
-	for rows.Next() {
-		var name string
-		err = rows.Scan(&name)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
-			return
-		}
-		locations = append(locations, name)
-	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, "rows")
 	}
 	return
 }
@@ -797,75 +743,6 @@ func (d *Database) GetName(table string, id string) (name string, err error) {
 	}
 	err = stmt.QueryRow(id).Scan(&name)
 	return
-}
-
-// AddName will add a name to a table (devices/locations) and return the ID. If the device already exists it will just return it.
-func (d *Database) AddName(table string, name string) (deviceID string, err error) {
-	// first check to see if it has already been added
-	deviceID, err = d.GetID(table, name)
-	if err == nil {
-		return
-	}
-	// logger.Log.Debugf("creating new name for %s in %s", name, table)
-
-	// get the current count
-	stmt, err := d.db.Prepare("SELECT COUNT(id) FROM " + table)
-	if err != nil {
-		err = errors.Wrap(err, "problem preparing SQL")
-		stmt.Close()
-		return
-	}
-	var currentCount int
-	err = stmt.QueryRow().Scan(&currentCount)
-	stmt.Close()
-	if err != nil {
-		err = errors.Wrap(err, "problem getting device count")
-		return
-	}
-
-	// transform the device name into an ID with the current count
-	currentCount++
-	deviceID = stringsizer.Transform(currentCount)
-	// logger.Log.Debugf("transformed (%d) %s -> %s", currentCount, name, deviceID)
-
-	// add the device name and ID
-	tx, err := d.db.Begin()
-	if err != nil {
-		err = errors.Wrap(err, "AddName")
-		return
-	}
-	query := "insert into " + table + "(id,name) values (?, ?)"
-	// logger.Log.Debugf("running query: '%s'", query)
-	stmt, err = tx.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, "AddName")
-		return
-	}
-	defer stmt.Close()
-	_, err = stmt.Exec(deviceID, name)
-	if err != nil {
-		err = errors.Wrap(err, "AddName")
-	}
-	err = tx.Commit()
-	if err != nil {
-		err = errors.Wrap(err, "AddName")
-		return
-	}
-	return
-}
-
-func Exists(name string) (err error) {
-	name = strings.TrimSpace(name)
-	name = path.Join(DataFolder, base58.FastBase58Encoding([]byte(name))+".sqlite3.db")
-	if _, err = os.Stat(name); err != nil {
-		err = errors.New("database '" + name + "' does not exist")
-	}
-	return
-}
-
-func (d *Database) Delete() (err error) {
-	logger.Log.Debugf("deleting %s", d.family)
-	return os.Remove(d.name)
 }
 
 // Open will open the database for transactions by first aquiring a filelock.
@@ -1059,68 +936,3 @@ func (d *Database) SetGPS(p models.SensorData) (err error) {
 	}
 	return
 }
-
-// GetAverageGPS will return an average wardrived GPS
-// for a given location
-func (d *Database) GetAverageGPS(location string) (lat float64, lon float64, err error) {
-	query := "SELECT avg(lat),avg(lon) FROM gps WHERE loc == ?"
-	stmt, err := d.db.Prepare(query)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query(location)
-	if err != nil {
-		err = errors.Wrap(err, query)
-		return
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		err = rows.Scan(&lat, &lon)
-		if err != nil {
-			err = errors.Wrap(err, "scanning")
-			return
-		}
-	}
-	err = rows.Err()
-	if err != nil {
-		err = errors.Wrap(err, "rows")
-	}
-	return
-}
-
-// // GetGPS will return a GPS for a given mac, if it exists
-// // if it doesn't exist it will return an error
-// func (d *Database) GetGPS(mac string) (gps models.GPS, err error) {
-// 	query := "SELECT mac,lat,lon,alt,timestamp FROM gps WHERE mac == ?"
-// 	stmt, err := d.db.Prepare(query)
-// 	if err != nil {
-// 		err = errors.Wrap(err, query)
-// 		return
-// 	}
-// 	defer stmt.Close()
-// 	rows, err := stmt.Query(mac)
-// 	if err != nil {
-// 		err = errors.Wrap(err, query)
-// 		return
-// 	}
-// 	defer rows.Close()
-
-// 	for rows.Next() {
-// 		err = rows.Scan(&gps.Mac, &gps.Latitude, &gps.Longitude, &gps.Altitude, &gps.Timestamp)
-// 		if err != nil {
-// 			err = errors.Wrap(err, "scanning")
-// 			return
-// 		}
-// 	}
-// 	err = rows.Err()
-// 	if err != nil {
-// 		err = errors.Wrap(err, "rows")
-// 	}
-// 	if gps.Mac == "" {
-// 		err = errors.New(mac + " does not exist in gps table")
-// 	}
-// 	return
-// }
