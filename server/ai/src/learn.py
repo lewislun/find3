@@ -178,7 +178,7 @@ class AI(object):
         #     name, int(1000 * (t - time.time()))))
         self.results[index] = predict_payload
 
-    @timeout(10)
+    #@timeout(10)
     def train(self, clf, x, y):
         return clf.fit(x, y)
 
