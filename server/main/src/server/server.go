@@ -325,6 +325,13 @@ func handlerLocate(c *gin.Context) {
 		if analysis, err = api.AnalyzeSensorData(s, db); err != nil {
 			return
 		}
+		for i, guess := range analysis.Guesses {
+			// remove guesses with prob == 0
+			if guess.Probability == 0 {
+				analysis.Guesses = analysis.Guesses[:i]
+				break
+			}
+		}
 		// TODO: save data in db
 
 		return
