@@ -119,7 +119,7 @@ func main() {
 	if *dump != "" {
 		err = api.Dump(*dump)
 	} else {
-		err = server.Run()
+		err = server.Run(*debug)
 	}
 	if err != nil {
 		fmt.Print("error: ")

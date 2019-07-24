@@ -27,7 +27,7 @@ var MinimumPassive = -1
 var db *database.Database
 
 // Run will start the server listening on the specified port
-func Run() (err error) {
+func Run(debugMode bool) (err error) {
 	defer logger.Log.Flush()
 
 	if db, err = database.Open("default"); err != nil {
@@ -306,23 +306,24 @@ func Run() (err error) {
 			r.GET("/api/v1/mqtt/:family", handlerMQTT) // handler for setting MQTT
 		}
 	*/
-	//r.POST("/classify", handlerDataClassify) // classify a fingerprint
 	//r.POST("/passive", handlerReverse)       // typical data handler
-	r.OPTIONS("/calibrate", func(c *gin.Context) { c.String(200, "OK") })
-	r.GET("/calibrate", handlerCalibrate)
+
 	r.OPTIONS("/efficacy", func(c *gin.Context) { c.String(200, "OK") })
 	r.GET("/efficacy", handlerEfficacy)
 	r.GET("/now", handlerNow)
 	r.POST("/locate", handlerLocate)
-	r.POST("/learn", handlerLearn)
+
+	if debugMode {
+		r.OPTIONS("/calibrate", func(c *gin.Context) { c.String(200, "OK") })
+		r.GET("/calibrate", handlerCalibrate)
+		r.POST("/learn", handlerLearn)
+
+		logger.Log.Infof("Debug Mode on. Learning and Calibration APIs enabled.")
+	}
 	logger.Log.Infof("Running on 0.0.0.0:%s", Port)
 
 	err = r.Run(":" + Port) // listen and serve
 	return
-}
-
-func replace(input, from, to string) string {
-	return strings.Replace(input, from, to, -1)
 }
 
 func handlerLocate(c *gin.Context) {
@@ -373,39 +374,6 @@ func handlerEfficacy(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": err == nil})
 	} else {
 		c.JSON(http.StatusOK, gin.H{"message": "got stats", "success": err == nil, "efficacy": efficacy})
-	}
-}
-
-func handlerApiV1ByLocation(c *gin.Context) {
-	locations, err := func(c *gin.Context) (byLocations []models.ByLocation, err error) {
-		family := strings.ToLower(strings.TrimSpace(c.Param("family")))
-		minutesAgo := strings.TrimSpace(c.DefaultQuery("history", "120"))
-		showRandomized := c.DefaultQuery("randomized", "1") == "1"
-		activeMinsThreshold, err := strconv.Atoi(c.DefaultQuery("active_mins", "0"))
-		if err != nil {
-			return
-		}
-		minScanners, err := strconv.Atoi(c.DefaultQuery("num_scanners", "0"))
-		if err != nil {
-			return
-		}
-		minProbability, err := strconv.ParseFloat(c.DefaultQuery("probability", "0"), 64)
-		if err != nil {
-			return
-		}
-		minutesAgoInt, err := strconv.Atoi(minutesAgo)
-		if err != nil {
-			return
-		}
-
-		byLocations, err = api.GetByLocation(family, minutesAgoInt, showRandomized, activeMinsThreshold, minScanners, minProbability, make(map[string]int), db)
-		return
-	}(c)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": err == nil})
-	} else {
-
-		c.JSON(http.StatusOK, gin.H{"message": "got locations", "success": err == nil, "locations": locations})
 	}
 }
 
@@ -491,43 +459,6 @@ func handlerLearn(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": false})
 	} else {
 		c.JSON(http.StatusOK, gin.H{"message": message, "success": true})
-	}
-}
-
-func handlerDataClassify(c *gin.Context) {
-	aidata, message, err := func(c *gin.Context) (aidata models.LocationAnalysis, message string, err error) {
-		var d models.SensorData
-		err = c.BindJSON(&d)
-		if err != nil {
-			err = errors.Wrap(err, "problem binding data")
-			return
-		}
-
-		d.Family = strings.TrimSpace(strings.ToLower(d.Family))
-
-		err = d.Validate()
-		if err != nil {
-			err = errors.Wrap(err, "problem validating data")
-			return
-		}
-
-		// process data
-		err = processSensorData(d, true)
-		if err != nil {
-			return
-		}
-
-		aidata, err = api.AnalyzeSensorData(d, db)
-		logger.Log.Debugf("[%s] /data %+v", d.Family, d)
-		message = "classified data"
-		return
-	}(c)
-
-	if err != nil {
-		logger.Log.Debugf("problem parsing: %s", err.Error())
-		c.JSON(http.StatusOK, gin.H{"message": err.Error(), "success": false, "analysis": nil})
-	} else {
-		c.JSON(http.StatusOK, gin.H{"message": message, "success": true, "analysis": aidata})
 	}
 }
 
