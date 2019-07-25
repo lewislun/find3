@@ -85,13 +85,13 @@ class AI(object):
         header = self.header[1:]
         is_unknown = True
         csv_data = numpy.zeros(len(header))
-        for sensorType in sensor_data['s']:
-            for sensor in sensor_data['s'][sensorType]:
+        for sensorType in sensor_data['sensors']:
+            for sensor in sensor_data['sensors'][sensorType]:
                 sensorName = sensorType + "-" + sensor
                 if sensorName in header:
                     is_unknown = False
                     csv_data[header.index(sensorName)] = sensor_data[
-                        's'][sensorType][sensor]
+                        'sensors'][sensorType][sensor]
         self.headerClassify = header
         self.csv_dataClassify = csv_data.reshape(1, -1)
         payload = {'location_names': self.naming['to'], 'predictions': []}

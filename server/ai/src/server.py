@@ -61,22 +61,22 @@ def classify():
     if 'data_folder' in payload:
         data_folder = payload['data_folder']
 
-    fname = os.path.join(data_folder, payload['sensor_data']['f'] + ".find3.ai")
+    fname = os.path.join(data_folder, payload['sensor_data']['family'] + ".find3.ai")
 
-    ai = ai_cache.get(payload['sensor_data']['f'])
+    ai = ai_cache.get(payload['sensor_data']['family'])
     if ai == None:
-        ai = AI(payload['sensor_data']['f'], data_folder)
+        ai = AI(payload['sensor_data']['family'], data_folder)
         logger.debug("loading {}".format(fname))
         try:
             ai.load(fname)
         except FileNotFoundError:
             return jsonify({"success": False, "message": "could not find '{p}'".format(p=fname)})
-        ai_cache[payload['sensor_data']['f']] = ai
+        ai_cache[payload['sensor_data']['family']] = ai
 
     classified = ai.classify(payload['sensor_data'])
 
     logger.debug("classified for {} {:d} ms".format(
-        payload['sensor_data']['f'], int(1000 * (t - time.time()))))
+        payload['sensor_data']['family'], int(1000 * (t - time.time()))))
     return jsonify({"success": True, "message": "data analyzed", 'analysis': classified})
 
 

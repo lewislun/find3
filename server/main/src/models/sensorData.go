@@ -9,15 +9,15 @@ import (
 // SensorData is the typical data structure for storing sensor data.
 type SensorData struct {
 	// Timestamp is the unique identifier, the time in milliseconds
-	Timestamp int64 `json:"t"`
+	Timestamp int64 `json:"time"`
 	// Family is a group of devices
-	Family string `json:"f"`
+	Family string `json:"family"`
 	// Device are unique within a family
-	Device string `json:"d"`
+	Device string `json:"device_id"`
 	// Location is optional, used for classification
-	Location string `json:"l,omitempty"`
+	Location string `json:"location,omitempty"`
 	// Sensors contains a map of map of sensor data
-	Sensors map[string]map[string]interface{} `json:"s"`
+	Sensors map[string]map[string]interface{} `json:"sensors"`
 	// GPS is optional
 	GPS GPS `json:"gps,omitempty"`
 }
