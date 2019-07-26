@@ -295,12 +295,15 @@ func Run(debugMode bool) (err error) {
 
 	r.OPTIONS("/efficacy", func(c *gin.Context) { c.String(200, "OK") })
 	r.GET("/efficacy", handlerEfficacy)
+	r.OPTIONS("/now", func(c *gin.Context) { c.String(200, "OK") })
 	r.GET("/now", handlerNow)
+	r.OPTIONS("/locate", func(c *gin.Context) { c.String(200, "OK") })
 	r.POST("/locate", handlerLocate)
 
 	if debugMode {
 		r.OPTIONS("/calibrate", func(c *gin.Context) { c.String(200, "OK") })
 		r.GET("/calibrate", handlerCalibrate)
+		r.OPTIONS("/learn", func(c *gin.Context) { c.String(200, "OK") })
 		r.POST("/learn", handlerLearn)
 
 		logger.Log.Infof("Debug Mode on. Learning and Calibration APIs enabled.")
