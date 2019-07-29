@@ -49,9 +49,9 @@ func Calibrate(family string, db *database.Database, crossValidation ...bool) (e
 			logger.Log.Error(errFit)
 		}
 	*/
+
 	// do the python learning
-	err = learnFromData(family, datasLearn)
-	if err != nil {
+	if err = learnFromData(family, datasLearn); err != nil {
 		return
 	}
 
