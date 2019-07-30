@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -324,18 +323,36 @@ func handlerLocate(c *gin.Context) {
 			return
 		}
 
+		// add timestamp to sensor data (if missing)
+		if s.Timestamp == 0 {
+			s.Timestamp = time.Now().UTC().UnixNano() / int64(time.Millisecond)
+		}
+
+		// store sensor data in db
+		go func() {
+			if err := db.StoreSensorData(s); err != nil {
+				logger.Log.Errorf("Failed to store sensor data %s", err.Error())
+			}
+		}()
+
 		// analyze data
 		if analysis, err = api.AnalyzeSensorData(s, db); err != nil {
 			return
 		}
+		// remove guesses with prob == 0
 		for i, guess := range analysis.Guesses {
-			// remove guesses with prob == 0
 			if guess.Probability == 0 {
 				analysis.Guesses = analysis.Guesses[:i]
 				break
 			}
 		}
-		// TODO: save data in db
+
+		// store prediction in db
+		go func() {
+			if err := db.AddPrediction(s.Timestamp, analysis.Guesses); err != nil {
+				logger.Log.Errorf("[%s] problem inserting: %s", s.Family, err.Error())
+			}
+		}()
 
 		return
 	}(c)
@@ -403,26 +420,6 @@ func handlerMQTT(c *gin.Context) {
 	return
 }
 
-func sendOutLocation(family, device string) (s models.SensorData, analysis models.LocationAnalysis, err error) {
-	s, err = db.GetLatest(device)
-	if err != nil {
-		return
-	}
-	analysis, err = sendOutData(s)
-	if err != nil {
-		return
-	}
-	analysis, err = api.AnalyzeSensorData(s, db)
-	if err != nil {
-		err = api.Calibrate(family, db, true)
-		if err != nil {
-			logger.Log.Warn(err)
-			return
-		}
-	}
-	return
-}
-
 func handlerNow(c *gin.Context) {
 	c.String(200, strconv.Itoa(int(time.Now().UTC().UnixNano()/int64(time.Millisecond))))
 }
@@ -437,8 +434,8 @@ func handlerLearn(c *gin.Context) {
 			return
 		}
 
-		// process data
-		if err = processSensorData(s, true); err != nil {
+		// store sensor data
+		if err = db.StoreSensorData(s); err != nil {
 			message = s.Family
 			return
 		}
@@ -674,63 +671,13 @@ func parseRollingData(family string) (err error) {
 			logger.Log.Debugf("[%s] skipped saving reverse sensor data for %s, not enough points (< %d)", family, sensor, rollingData.MinimumPassive)
 			continue
 		}
-		err := processSensorData(sensorMap[sensor])
+		err := db.StoreSensorData(sensorMap[sensor])
 		if err != nil {
 			logger.Log.Warnf("[%s] problem saving: %s", family, err.Error())
 		}
 		logger.Log.Debugf("[%s] saved reverse sensor data for %s", family, sensor)
 	}
 
-	return
-}
-
-func processSensorData(p models.SensorData, justSave ...bool) (err error) {
-	if err = api.SaveSensorData(p, db); err != nil {
-		return
-	}
-
-	if len(justSave) < 0 || !justSave[0] {
-		go sendOutData(p)
-	}
-
-	return
-}
-
-func sendOutData(p models.SensorData) (analysis models.LocationAnalysis, err error) {
-	analysis, _ = api.AnalyzeSensorData(p, db)
-	if len(analysis.Guesses) == 0 {
-		err = errors.New("no guesses")
-		return
-	}
-	type Payload struct {
-		Sensors  models.SensorData           `json:"sensors"`
-		Guesses  []models.LocationPrediction `json:"guesses"`
-		Location string                      `json:"location"` // FIND backwards-compatability
-		Time     int64                       `json:"time"`     // FIND backwards-compatability
-	}
-
-	payload := Payload{
-		Sensors:  p,
-		Guesses:  analysis.Guesses,
-		Location: analysis.Guesses[0].Location,
-		Time:     p.Timestamp,
-	}
-
-	bTarget, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-
-	p.Family = strings.TrimSpace(strings.ToLower(p.Family))
-
-	// logger.Log.Debugf("sending data over websockets (%s/%s):%s", p.Family, p.Device, bTarget)
-	SendMessageOverWebsockets(p.Family, p.Device, bTarget)
-	SendMessageOverWebsockets(p.Family, "all", bTarget)
-
-	if UseMQTT {
-		logger.Log.Debugf("[%s] sending data over mqtt (%s)", p.Family, p.Device)
-		mqtt.Publish(p.Family, p.Device, string(bTarget))
-	}
 	return
 }
 

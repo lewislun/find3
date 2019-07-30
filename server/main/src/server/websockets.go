@@ -63,7 +63,7 @@ func wshandler(c *gin.Context) {
 	}
 	ws.connections[family+"-"+device][conn.RemoteAddr().String()] = conn
 	ws.Unlock()
-	go sendOutLocation(family, device)
+	//go sendOutLocation(family, device)
 	go websocketListener(family, device, conn)
 	// Listen to the websockets
 

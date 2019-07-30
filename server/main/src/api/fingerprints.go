@@ -3,7 +3,6 @@ package api
 import (
 	"sync"
 
-	"github.com/pkg/errors"
 	"github.com/schollz/find3/server/main/src/database"
 	"github.com/schollz/find3/server/main/src/models"
 )
@@ -20,29 +19,6 @@ func init() {
 	globalUpdateCounter.Lock()
 	defer globalUpdateCounter.Unlock()
 	globalUpdateCounter.Count = make(map[string]int)
-}
-
-// SaveSensorData will add sensor data to the database
-func SaveSensorData(s models.SensorData, db *database.Database) (err error) {
-	if err = s.Validate(); err != nil {
-		err = errors.Wrap(err, "problem validating data")
-		return
-	}
-
-	err = db.AddSensor(s)
-	if s.GPS.Longitude != 0 && s.GPS.Latitude != 0 {
-		db.SetGPS(s)
-	}
-
-	/* disable auto calibration
-	if err != nil {
-		return
-	}
-	if s.Location != "" {
-		go updateCounter(s.Family)
-	}
-	*/
-	return
 }
 
 // SavePrediction will add sensor data to the database

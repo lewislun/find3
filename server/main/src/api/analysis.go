@@ -205,15 +205,6 @@ func AnalyzeSensorData(s models.SensorData, db *database.Database) (aidata model
 		}
 	}
 
-	// add prediction to the database
-	// adding predictions uses up a lot of space
-	go func() {
-		errInsert := db.AddPrediction(s.Timestamp, aidata.Guesses)
-		if errInsert != nil {
-			logger.Log.Errorf("[%s] problem inserting: %s", s.Family, errInsert.Error())
-		}
-	}()
-
 	logger.Log.Debugf("[%s] analyzed in %s", s.Family, time.Since(startAnalyze))
 	return
 }

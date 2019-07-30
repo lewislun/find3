@@ -275,10 +275,17 @@ func (d *Database) GetPrediction(timestamp int64) (aidata []models.LocationPredi
 	return
 }
 
-// AddSensor will insert a sensor data into the database
-// TODO: AddSensor should be special case of AddSensors
-func (d *Database) AddSensor(s models.SensorData) (err error) {
+// StoreSensorData will insert a sensor data into the database
+func (d *Database) StoreSensorData(s models.SensorData) (err error) {
+
+	// validate data
+	if err = s.Validate(); err != nil {
+		err = errors.Wrap(err, "problem validating data")
+		return
+	}
+
 	startTime := time.Now()
+
 	// determine the current table coluss
 	oldColumns := make(map[string]struct{})
 	columnList, err := d.Columns()
@@ -310,12 +317,12 @@ func (d *Database) AddSensor(s models.SensorData) (err error) {
 	sqlStatement := "insert into sensors(timestamp,deviceid,locationid,bluetooth) values (?,?,?,?)"
 	stmt, err := d.db.Prepare(sqlStatement)
 	if err != nil {
-		return errors.Wrap(err, "AddSensor, prepare "+sqlStatement)
+		return errors.Wrap(err, "StoreSensorData, prepare "+sqlStatement)
 	}
 	defer stmt.Close()
 
 	if _, err = stmt.Exec(args...); err != nil {
-		return errors.Wrap(err, "AddSensor, execute")
+		return errors.Wrap(err, "StoreSensorData, execute")
 	}
 
 	// update the map key slimmer
